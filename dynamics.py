@@ -12,7 +12,7 @@ class MyRobotDynamics:
         self.lift_wheel = SimpleWheels(self.lift_gearbox, 3)
         self.lift_load = OneDimensionalLoad(60/32)
         self.lift_load.add_motive_force(self.lift_wheel)
-        self.lift_load.build_functions()
+        #self.lift_load.build_functions()
 
     def update_physics(self, dt):
         self.drivetrain.set_values(1, -1)
@@ -25,13 +25,13 @@ class MyRobotDynamics:
         #lift_state = self.lift_load.update_state(dt)
         return {
             "drivetrain": drivetrain_state,
-            #"lift": lift_state,
+        #    "lift": lift_state,
         }
 
     def get_state(self):
         return {
             "drivetrain": self.drivetrain.get_state(),
-            #"lift": self.lift_load.state
+        #    "lift": self.lift_load.state
         }
 
 

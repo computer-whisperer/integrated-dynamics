@@ -46,25 +46,38 @@ class OneDimensionalLoad:
             "position": self.state["position"],
             "velocity": self.state["velocity"]
         })["force"]
-        force_derivative = theano.gradient.jacobian(force, self.state["velocity"])
+        acceleration = theano.printing.Print("acceleration")(force/self.mass)
+        acceleration_derivative = theano.printing.Print("acceleration_derivative")(theano.gradient.jacobian(acceleration, self.state["velocity"]))
         self.dt = T.dscalar("dt")
+
+        # Taylor series approximation of integral
+        # http://www.wolframalpha.com/input/?i=integral+of+e^%28as%29b+ds+from+0+to+t
+        coef = 1.0
+        integral_approx = acceleration * self.dt
+        for c in range(2, 7):
+            coef /= c
+            integral_approx += coef * T.dot(acceleration_derivative**(c-1), acceleration) * self.dt**c
+
+        special_e = theano.printing.Print("special e")(T.exp(acceleration_derivative*self.dt))
+        new_velocity = T.dot(special_e, theano.printing.Print("old_vel")(self.state["velocity"])) + integral_approx
 
         # Equation for new velocity:
         # http://math.stackexchange.com/questions/1550036/recursive-integral-definition-for-the-dynamics-of-a-dc-motor
         # http://wolfr.am/8BhS0HIW
-        special_e = math.e**(force_derivative*self.dt/self.mass)
-        new_velocity = T.dot(T.dot(force, (special_e-1)), T.inv(force_derivative))+self.state["velocity"]
+        #new_velocity = T.dot(T.dot(force, (special_e-1)), T.inv(force_derivative))+self.state["velocity"]
 
         # Equation for new position:
         # http://www.wolframalpha.com/input/?i=integral+of+%28T%2FD%29%28e^%28D+t%2Fm%29-1%29+%2B+o+dt
-        new_position = T.dot(T.dot(force, (self.mass*special_e-force_derivative*self.dt)), T.inv(T.dot(force_derivative, force_derivative))) + self.state["velocity"]*self.dt + self.state["position"]
+        #new_position = T.dot(T.dot(force, (special_e-acceleration_derivative*self.dt)), T.inv(T.dot(acceleration_derivative, acceleration_derivative))) + self.state["velocity"]*self.dt + self.state["position"]
+        new_position = self.state["position"] + new_velocity*self.dt
 
         self.state_tensors = {
             "position": new_position,
             "velocity": new_velocity
         }
         shared_vars = self.get_shared()
-        self.state_update = theano.function([self.dt], [new_position, new_velocity], updates=shared_vars)
+        #theano.printing.prettyprint(new_position)
+        self.update_state = theano.function([self.dt], [new_position, new_velocity], updates=shared_vars)
 
     def get_tensors(self, tensors_in):
         self.state_tensors = {
@@ -85,9 +98,10 @@ class OneDimensionalLoad:
     def get_shared(self):
         shared_vals = []
         for motive_force in self.motive_forces:
-            shared_vals.extend(motive_force.get_shared())
+            shared_vals.extend(motive_force["source"].get_shared())
         shared_vals.append((self.state["position"], self.state_tensors["position"]))
         shared_vals.append((self.state["velocity"], self.state_tensors["velocity"]))
+        return shared_vals
 
 class TwoDimensionalLoad(OneDimensionalLoad):
     """
@@ -136,18 +150,19 @@ class TwoDimensionalLoad(OneDimensionalLoad):
         for motive_force in self.motive_forces:
 
             # Shift force and force derivative from being wheel-centric to being robot-centric
-            bot_to_origin_rot = np.array([
-                [math.cos(-motive_force["origin"][2]), math.sin(-motive_force["origin"][2]), 0],
-                [math.sin(-motive_force["origin"][2]), math.cos(-motive_force["origin"][2]), 0],
-                [math.sin(-motive_force["angle_to_perpendicular"])/motive_force["distance_to_cog"],
-                 math.cos(-motive_force["angle_to_perpendicular"])/motive_force["distance_to_cog"], 1]
-            ])
+            #bot_to_origin_rot = np.array([
+            #    [math.cos(-motive_force["origin"][2]), math.sin(-motive_force["origin"][2]), 0],
+            #    [math.sin(-motive_force["origin"][2]), math.cos(-motive_force["origin"][2]), 0],
+            #    [math.sin(-motive_force["angle_to_perpendicular"])/motive_force["distance_to_cog"],
+            #     math.cos(-motive_force["angle_to_perpendicular"])/motive_force["distance_to_cog"], 1]
+            #])
+            bot_to_origin_rot = rot_tensor(-motive_force["origin"][2])
+            bot_to_origin_rot += np.array([[0,0,0],[0,0,0],[1,0,0]]) * T.sin(-motive_force["angle_to_perpendicular"])/motive_force["distance_to_cog"]
+            bot_to_origin_rot += np.array([[0,0,0],[0,0,0],[0,1,0]]) * T.sin(-motive_force["angle_to_perpendicular"])/motive_force["distance_to_cog"]
 
-            origin_to_bot_rot = np.array([
-                [math.cos(motive_force["origin"][2]), math.sin(motive_force["origin"][2]), math.sin(motive_force["angle_to_perpendicular"])/motive_force["distance_to_cog"]],
-                [math.sin(motive_force["origin"][2]), math.cos(motive_force["origin"][2]), math.cos(motive_force["angle_to_perpendicular"])/motive_force["distance_to_cog"]],
-                [0, 0, 1]
-            ])
+            origin_to_bot_rot = rot_tensor(motive_force["origin"][2])
+            origin_to_bot_rot += np.array([[0,0,0],[0,0,0],[1,0,0]]) * T.sin(motive_force["angle_to_perpendicular"])/motive_force["distance_to_cog"]
+            origin_to_bot_rot += np.array([[0,0,0],[0,0,0],[0,1,0]]) * T.sin(motive_force["angle_to_perpendicular"])/motive_force["distance_to_cog"]
 
             force = motive_force["source"].get_tensors({
                 "ground_velocity": T.dot(robot_velocity, bot_to_origin_rot),

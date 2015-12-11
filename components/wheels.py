@@ -16,19 +16,12 @@ class SimpleWheels:
         self.source = source
         self.radius = diameter/24
         self.circumference = diameter/12*math.pi
-        self.state_tensors = {}
-        self.state = {
-        }
+        self.state = {}
 
     def get_tensors(self, tensors_in):
         rps = tensors_in["ground_velocity"][1]/self.circumference
         rot_travel = tensors_in["ground_travel"][1]/self.circumference
-        self.state_tensors = {
-            "rps": theano.function([], rps),
-            "rot_travel": theano.function([], rot_travel),
-            "ground_velocity": theano.function([], tensors_in["ground_velocity"]),
-            "ground_travel": theano.function([], tensors_in["ground_travel"])
-        }
+
         torque = self.source.get_tensors({
             "rps": rps,
             "rot_travel": rot_travel
@@ -38,8 +31,8 @@ class SimpleWheels:
             "force": force
         }
 
-    def update_state(self):
-        self.source.update_state()
+    def get_shared(self):
+        return self.source.get_shared()
 
 class SolidWheels:
     """

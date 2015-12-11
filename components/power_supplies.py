@@ -4,7 +4,8 @@ class SpeedController:
     """
     Simulates the dynamics of a standard speed controller
     """
-    value = theano.shared(0.0)
+    def __init__(self):
+        self.value = theano.shared(0.0)
 
     def set_value(self, value):
         self.value.set_value(max(-1, min(1, value)))
