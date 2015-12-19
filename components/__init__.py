@@ -1,3 +1,4 @@
+from .component_base import *
 from .power_supplies import *
 from .motors import *
 from .gearboxes import *

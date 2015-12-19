@@ -27,8 +27,8 @@ class KOPAssembly:
         self.right_wheels = SimpleWheels(self.right_gearbox, 6)
 
         self.drivetrain_load = TwoDimensionalLoad(bot_weight/32)
-        self.drivetrain_load.add_motive_force(self.left_wheels, x_origin=-.5)
-        self.drivetrain_load.add_motive_force(self.right_wheels, x_origin=.5, r_origin=math.pi)
+        self.drivetrain_load.add_input(self.left_wheels, x_origin=-.5)
+        self.drivetrain_load.add_input(self.right_wheels, x_origin=.5, r_origin=math.pi)
         self.drivetrain_load.build_functions()
 
     def set_values(self, left_value, right_value):

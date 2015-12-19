@@ -1,16 +1,16 @@
 import theano
+from components import DynamicsComponent
 
-class SpeedController:
+class SpeedController(DynamicsComponent):
     """
     Simulates the dynamics of a standard speed controller
     """
     def __init__(self):
-        self.value = theano.shared(0.0)
+        self.percent_vbus = theano.shared(0.0, theano.config.floatX)
+        super().__init__()
 
     def set_value(self, value):
-        self.value.set_value(max(-1, min(1, value)))
+        self.percent_vbus.set_value(max(-1, min(1, value)))
 
-    def get_tensors(self, tensors_in):
-        return {
-            "voltage": self.value*12
-        }
+    def get_force_tensor(self):
+        return self.percent_vbus*12

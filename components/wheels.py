@@ -1,9 +1,9 @@
 import math
 import numpy as np
+from components import DynamicsComponent
 import theano
 
-
-class SimpleWheels:
+class SimpleWheels(DynamicsComponent):
     """
     Simulates the dynamics of a wheel without friction calculations
     """
@@ -13,26 +13,24 @@ class SimpleWheels:
         :param source: The object providing torque to drive the wheel from
         :param diameter: The diameter of the wheel in inches
         """
-        self.source = source
-        self.radius = diameter/24
-        self.circumference = diameter/12*math.pi
-        self.state = {}
-
-    def get_tensors(self, tensors_in):
-        rps = tensors_in["ground_velocity"][1]/self.circumference
-        rot_travel = tensors_in["ground_travel"][1]/self.circumference
-
-        torque = self.source.get_tensors({
-            "rps": rps,
-            "rot_travel": rot_travel
-        })["torque"]
-        force = np.array([0, 1]) * torque/self.radius
-        return {
-            "force": force
+        self.diameter = diameter/12
+        super().__init__([source])
+        self.state = {
+            "velocity": theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
         }
 
-    def get_shared(self):
-        return self.source.get_shared()
+    def get_force_tensor(self):
+        torque_in = self.get_input_force_tensor()
+        return np.array([0, 1]) * torque_in/(self.diameter/2)
+
+    def build_state_tensors(self, travel, velocity):
+        wheel_vel = velocity/(math.pi*self.diameter)
+        wheel_travel = travel/(math.pi*self.diameter)
+        self.state_tensors = {
+            "velocity": wheel_vel
+        }
+        self.build_input_state_tensors(wheel_travel[1], wheel_vel[1])
+
 
 class SolidWheels:
     """

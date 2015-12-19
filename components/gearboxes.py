@@ -1,35 +1,27 @@
+from components import DynamicsComponent
 import theano
 
-
-class GearBox:
+class GearBox(DynamicsComponent):
     """
     Simulates the dynamics of a gearbox with one or more motors attached
     """
 
     def __init__(self, motors, gear_ratio=10, dynamic_friction=10):
-        self.motors = motors
         self.friction = dynamic_friction
         self.gear_ratio = gear_ratio
-        self.state_tensors = {}
+        super().__init__(motors)
         self.state = {
-            "rotations": theano.shared(0.0)
+            "position": theano.shared(0.0, theano.config.floatX),
+            "velocity": theano.shared(0.0, theano.config.floatX)
         }
 
-    def get_tensors(self, tensors_in):
+    def get_force_tensor(self):
+        torque_in = self.get_input_force_tensor()
+        return torque_in*self.gear_ratio
+
+    def build_state_tensors(self, travel, velocity):
         self.state_tensors = {
-            "rotations": self.state["rotations"]+tensors_in["rot_travel"],
+            "position": self.state["position"] + travel,
+            "velocity": velocity
         }
-
-        motor_rps = tensors_in["rps"]*self.gear_ratio
-
-        torque_in = 0
-        for motor in self.motors:
-            torque_in += motor.get_tensors({"rps": motor_rps})["torque"]
-        torque_out = torque_in*self.gear_ratio
-
-        return {
-            "torque": torque_out
-        }
-
-    def get_shared(self):
-        return [(self.state["rotations"], self.state_tensors["rotations"])]
+        self.build_input_state_tensors(travel*self.gear_ratio, velocity*self.gear_ratio)

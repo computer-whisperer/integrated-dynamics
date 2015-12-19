@@ -1,31 +1,27 @@
+from components import DynamicsComponent
 import theano
 
-
-class Motor:
+class Motor(DynamicsComponent):
     """
     Simulates the dynamics of any number of motors connected to a common power supply
     """
 
     def __init__(self, power_supply, free_rps_per_volt, stall_torque_per_volt):
-        self.power_supply = power_supply
         self.free_rps_per_volt = free_rps_per_volt
         self.stall_torque_per_volt = stall_torque_per_volt
-        self.state_functions = {}
-
-    def get_tensors(self, tensors_in):
-        self.state_functions = {
-            "rps": theano.function([], tensors_in["rps"])
+        super().__init__([power_supply])
+        self.state = {
+            "velocity": theano.shared(0.0, theano.config.floatX)
         }
-        voltage_in = self.power_supply.get_tensors({})["voltage"]
+
+    def get_force_tensor(self):
+        voltage_in = self.get_input_force_tensor()
         free_rps = self.free_rps_per_volt*voltage_in
         stall_torque = self.stall_torque_per_volt*voltage_in
-        torque = stall_torque + tensors_in["rps"] * -stall_torque/free_rps
-        return {
-            "torque": torque
-        }
+        return stall_torque + self.state_tensors["velocity"] * -stall_torque/free_rps
 
-    def update_state(self):
-        pass
+    def build_state_tensors(self, travel, velocity):
+        self.state_tensors["velocity"] = velocity
 
 class CIMMotor(Motor):
     def __init__(self, power_supply):
