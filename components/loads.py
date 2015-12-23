@@ -56,7 +56,7 @@ class OneDimensionalLoad(DynamicsComponent):
     def build_input_state_tensors(self, travel, velocity, dt):
         cast = np.array([0, 1])
         for component in self.input_components:
-            component["component"].build_state_tensors(travel*cast, velocity*cast)
+            component["component"].build_state_tensors(travel*cast, velocity*cast, dt)
 
     def build_functions(self):
         dt = T.scalar(dtype=theano.config.floatX)

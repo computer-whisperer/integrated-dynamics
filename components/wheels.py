@@ -2,6 +2,7 @@ import math
 import numpy as np
 from components import DynamicsComponent
 import theano
+from theano.ifelse import ifelse
 import theano.tensor as T
 from utilities import integrate_via_ode
 
@@ -25,7 +26,7 @@ class SimpleWheels(DynamicsComponent):
         torque_in = np.array([0.0, 0.0])
         for component in self.input_components:
             torque_in += np.array([0, 1]) *component["component"].get_force_tensor()
-        return torque_in
+        return torque_in/(self.diameter/2)
 
     def build_state_tensors(self, travel, velocity, dt):
         wheel_vel = velocity/(math.pi*self.diameter)
@@ -48,60 +49,43 @@ class SolidWheels(SimpleWheels):
         self.total_static_cof = normal_force*static_cof
         self.total_dynamic_cof = normal_force*dynamic_cof
         self.state = {
-            "velocity": np.array([0.0, 0.0], theano.config.floatX),
-            "travel": np.array([0.0, 0.0], theano.config.floatX)
+            "velocity": theano.shared(np.array([0.0, 0.0]), theano.config.floatX),
+            "slip": theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
         }
 
     def get_force_tensor(self):
-        force = self.get_input_force_tensor()/self.diameter/2
-        return force + T.min(self.total_static_cof, T.norm(force))/force
+        force = self.get_input_force_tensor()/(self.diameter/2)
+        #return force - self.total_static_cof*self.state_tensors["slip"]/T.sum(self.state["slip"]**2)**.5
+        return force - self.total_static_cof*self.state_tensors["slip"]
 
     def build_state_tensors(self, travel, velocity, dt):
-
-        self.state_tensors = {
-            "velocity": velocity,
-            "travel": travel
-        }
-        self.build_input_state_tensors(travel[1], velocity[1], dt)
-        accel = (self.get_input_force_tensor()/self.diameter/2 - self.get_force_tensor())/self.mass
-        wheel_vel = velocity + accel*dt
-        wheel_travel = travel + (wheel_vel-velocity)*dt
+        wheel_vel = velocity/(self.diameter*math.pi) + self.state["slip"]
+        wheel_travel = travel/(self.diameter*math.pi) + self.state["slip"]*dt
         self.state_tensors = {
             "velocity": wheel_vel,
-            "travel": wheel_travel
+            "slip": self.state["slip"]
+        }
+        self.build_input_state_tensors(wheel_travel[1], wheel_vel[1], dt)
+        #slip_dir = self.state["slip"]/T.sum(self.state["slip"]**2)**.5
+        #slip_dir = ifelse(T.any(T.isnan(slip_dir)), np.array([0.0, 0.0]), slip_dir)
+        #slip_accel = (self.get_force_tensor() - self.total_dynamic_cof*slip_dir)/self.mass
+        slip_accel = (self.get_force_tensor() - self.total_dynamic_cof*self.state["slip"])/self.mass
+        new_slip = theano.printing.Print("slip")(integrate_via_ode(slip_accel, self.state["slip"], dt, self.state["slip"]))#, [velocity, travel]))
+        #new_slip = theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
+
+        wheel_vel = velocity/(self.diameter*math.pi) + new_slip
+        wheel_travel = travel/(self.diameter*math.pi) + new_slip*dt
+        self.state_tensors = {
+            "velocity": wheel_vel,
+            "slip": new_slip
         }
         self.build_input_state_tensors(wheel_travel[1], wheel_vel[1], dt)
 
-    def update_state(self, dt, new_state):
-        power_in = self.source.get_output()
-        force = np.array([-self.state["velocity"][0], power_in["torque"]/self.radius])
-        force_derivative = np.array([[-1, 0],
-                                     [0, power_in["d_torque/d_rps"]/self.circumference/self.radius]])
-
-        slip_rate = np.array([0, self.source.state["rps"]*self.circumference]) - self.state["velocity"]
-        slip_magnitude = np.linalg.norm(slip_rate)
-        force_magnitude = np.linalg.norm(force)
-        if slip_magnitude > .1 or force_magnitude > self.total_static_cof:
-            # Equation for new rpm:
-            # http://wolfr.am/8BlLGSYm
-            #
-            # Equation for new position:
-            # http://wolfr.am/8BlO6iX9
-
-            special_e = math.e**(force_derivative*self.radius*dt/self.mass)
-            F_over_D = (force[1]-math.copysign(self.total_dynamic_cof, slip_rate[1]))/force_derivative
-            rps = F_over_D*(special_e-1)+self.source.state["rps"]
-            rotations = F_over_D*(self.mass*special_e-force_derivative*self.radius*dt)/force_derivative/self.radius + self.source.state["rps"]*dt + self.source.state["rotations"]
-        else:
-            rps = new_state["velocity"][1]/self.circumference
-            rotations = self.source.state["rotations"] + (new_state["travel"][1]-self.state["travel"][1])/self.circumference
-
-        self.source.update_state(dt, {"rps": rps, "rotations": rotations})
-        self.state = new_state
 
 class KOPWheels(SolidWheels):
     def __init__(self, gearbox, diameter, count, normal_force):
         SolidWheels.__init__(self, gearbox, count, diameter, 1.07, .9, normal_force)
+
 
 class MecanumWheel:
     """
