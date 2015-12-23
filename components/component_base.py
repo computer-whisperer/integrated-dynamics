@@ -20,14 +20,14 @@ class DynamicsComponent:
         return T.sum([component["component"].get_force_tensor() for component in self.input_components])
 
     def get_force_tensor(self):
-        return 0
+        return self.get_input_force_tensor()
 
-    def build_state_tensors(self, travel, velocity):
-        self.build_input_state_tensors(travel, velocity)
+    def build_state_tensors(self, travel, velocity, dt):
+        self.build_input_state_tensors(travel, velocity, dt)
 
-    def build_input_state_tensors(self, travel, velocity):
+    def build_input_state_tensors(self, travel, velocity, dt):
         for component in self.input_components:
-            component["component"].build_state_tensors(travel, velocity)
+            component["component"].build_state_tensors(travel, velocity, dt)
 
     def get_update_tensors(self):
         tensors = []
@@ -36,43 +36,3 @@ class DynamicsComponent:
         for state in self.state_tensors:
             tensors.append([self.state[state], self.state_tensors[state]])
         return tensors
-
-
-class LinearerDynamicsComponent(DynamicsComponent):
-
-    def __init__(self, input_components=None, dimensions=1):
-        DynamicsComponent.__init__(self, input_components)
-        self.dimensions = dimensions
-        self.state = {
-            "position": theano.shared(np.zeros([dimensions]), theano.config.floatX),
-            "velocity": theano.shared(np.zeros([dimensions]), theano.config.floatX)
-        }
-
-    def add_input(self, component):
-        self.input_components.append({
-            "component": component
-        })
-
-    def get_input(self, component):
-        return component.get_force_tensor()
-
-    def _get_input_force(self):
-        total_force = T.sum([T.dot(component["component"].get_force_tensor(), component["force_transform"])
-                            for component in self.input_components])
-        return total_force
-
-    def get_force_tensor(self):
-        return self._get_input_force()
-
-    def build_state_tensors(self, travel, velocity):
-        self.state_tensors = {
-            "position": self.state["position"] + travel,
-            "velocity": velocity
-        }
-        for state in self.state:
-            assert self.state[state].ndim == self.state_tensors[state].ndim
-            assert self.state[state].type == self.state_tensors[state].type
-        for component in self.input_components:
-            component_travel = T.dot(travel, component["travel_transform"])
-            component_velocity = T.dot(velocity, component["travel_transform"])
-            component["component"].build_state_tensors(component_travel, component_velocity)

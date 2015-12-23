@@ -19,9 +19,9 @@ class GearBox(DynamicsComponent):
         torque_in = self.get_input_force_tensor()
         return torque_in*self.gear_ratio
 
-    def build_state_tensors(self, travel, velocity):
+    def build_state_tensors(self, travel, velocity, dt):
         self.state_tensors = {
             "position": self.state["position"] + travel,
             "velocity": velocity
         }
-        self.build_input_state_tensors(travel*self.gear_ratio, velocity*self.gear_ratio)
+        self.build_input_state_tensors(travel*self.gear_ratio, velocity*self.gear_ratio, dt)

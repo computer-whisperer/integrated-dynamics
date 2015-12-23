@@ -8,7 +8,6 @@ execute_start = time.time()
 iterations = 4
 for t in range(iterations):
     print(robot_dynamics_1.update_physics(.05))
-    print("\n")
 print("\nCompilation took {} seconds.".format(execute_start-start_time))
 execute_time = time.time() - execute_start
 print("Execution took {} seconds total, {} per iteration".format(execute_time, execute_time/iterations))

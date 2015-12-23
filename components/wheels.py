@@ -2,71 +2,75 @@ import math
 import numpy as np
 from components import DynamicsComponent
 import theano
+import theano.tensor as T
+from utilities import integrate_via_ode
 
 class SimpleWheels(DynamicsComponent):
     """
     Simulates the dynamics of a wheel without friction calculations
     """
 
-    def __init__(self, source, diameter):
+    def __init__(self, components, diameter):
         """
-        :param source: The object providing torque to drive the wheel from
-        :param diameter: The diameter of the wheel in inches
+        :param components: The list of objects providing torque to drive the wheel(s) from
+        :param diameter: The diameter of the wheel(s) in inches
         """
         self.diameter = diameter/12
-        super().__init__([source])
+        super().__init__(components)
         self.state = {
             "velocity": theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
         }
 
-    def get_force_tensor(self):
-        torque_in = self.get_input_force_tensor()
-        return np.array([0, 1]) * torque_in/(self.diameter/2)
+    def get_input_force_tensor(self):
+        torque_in = np.array([0.0, 0.0])
+        for component in self.input_components:
+            torque_in += np.array([0, 1]) *component["component"].get_force_tensor()
+        return torque_in
 
-    def build_state_tensors(self, travel, velocity):
+    def build_state_tensors(self, travel, velocity, dt):
         wheel_vel = velocity/(math.pi*self.diameter)
         wheel_travel = travel/(math.pi*self.diameter)
         self.state_tensors = {
             "velocity": wheel_vel
         }
-        self.build_input_state_tensors(wheel_travel[1], wheel_vel[1])
+        self.build_input_state_tensors(wheel_travel[1], wheel_vel[1], dt)
 
 
-class SolidWheels:
+class SolidWheels(SimpleWheels):
     """
     Simulates the dynamics of a set of solid wheels attached to a single gearbox
     """
 
-    def __init__(self, source, count, diameter, static_cof, dynamic_cof, normal_force):
-        self.source = source
+    def __init__(self, components, count, diameter, static_cof, dynamic_cof, normal_force):
+        super().__init__(components, diameter)
         self.count = count
-        self.radius = diameter/24
         self.mass = .25*count
-        self.circumference = diameter/12*math.pi
         self.total_static_cof = normal_force*static_cof
         self.total_dynamic_cof = normal_force*dynamic_cof
         self.state = {
-            "velocity": np.array([0, 0]),
-            "travel": np.array([0, 0])
+            "velocity": np.array([0.0, 0.0], theano.config.floatX),
+            "travel": np.array([0.0, 0.0], theano.config.floatX)
         }
 
-    def get_output(self):
-        power_in = self.source.get_output()
-        force = np.array([-self.state["velocity"][0], power_in["torque"]/self.radius])
-        force_derivative = np.array([[-1, 0],
-                                     [0, power_in["d_torque/d_rps"]/self.circumference/self.radius]])
+    def get_force_tensor(self):
+        force = self.get_input_force_tensor()/self.diameter/2
+        return force + T.min(self.total_static_cof, T.norm(force))/force
 
-        slip_rate = np.array([0, self.source.state["rps"]*self.circumference]) - self.state["velocity"]
-        slip_magnitude = np.linalg.norm(slip_rate)
-        force_magnitude = np.linalg.norm(force)
-        if slip_magnitude > .1 or force_magnitude > self.total_static_cof:
-            force = slip_rate * self.total_dynamic_cof/slip_magnitude
-            force_derivative = np.array([[-.1, 0],
-                                         [0, -.1]])
-        return {
-            "force": force,
-            "d_force/d_vel": force_derivative
+    def build_state_tensors(self, travel, velocity, dt):
+
+        self.state_tensors = {
+            "velocity": velocity,
+            "travel": travel
         }
+        self.build_input_state_tensors(travel[1], velocity[1], dt)
+        accel = (self.get_input_force_tensor()/self.diameter/2 - self.get_force_tensor())/self.mass
+        wheel_vel = velocity + accel*dt
+        wheel_travel = travel + (wheel_vel-velocity)*dt
+        self.state_tensors = {
+            "velocity": wheel_vel,
+            "travel": wheel_travel
+        }
+        self.build_input_state_tensors(wheel_travel[1], wheel_vel[1], dt)
 
     def update_state(self, dt, new_state):
         power_in = self.source.get_output()

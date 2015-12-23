@@ -23,8 +23,8 @@ class KOPAssembly:
 
         #self.left_wheels = KOPWheels(self.left_gearbox, 3, 6, bot_weight / 2)
         #self.right_wheels = KOPWheels(self.right_gearbox, 3, 6, bot_weight / 2)
-        self.left_wheels = SimpleWheels(self.left_gearbox, 6)
-        self.right_wheels = SimpleWheels(self.right_gearbox, 6)
+        self.left_wheels = SimpleWheels([self.left_gearbox], 6)
+        self.right_wheels = SimpleWheels([self.right_gearbox], 6)
 
         self.drivetrain_load = TwoDimensionalLoad(bot_weight/32)
         self.drivetrain_load.add_input(self.left_wheels, x_origin=-.5)

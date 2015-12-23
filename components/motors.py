@@ -1,5 +1,7 @@
 from components import DynamicsComponent
 import theano
+import theano.tensor as T
+from theano.ifelse import ifelse
 
 class Motor(DynamicsComponent):
     """
@@ -16,11 +18,11 @@ class Motor(DynamicsComponent):
 
     def get_force_tensor(self):
         voltage_in = self.get_input_force_tensor()
-        free_rps = self.free_rps_per_volt*voltage_in
-        stall_torque = self.stall_torque_per_volt*voltage_in
-        return stall_torque + self.state_tensors["velocity"] * -stall_torque/free_rps
+        torque_out = self.stall_torque_per_volt*voltage_in + \
+                     self.state_tensors["velocity"] * -self.stall_torque_per_volt/self.free_rps_per_volt
+        return torque_out
 
-    def build_state_tensors(self, travel, velocity):
+    def build_state_tensors(self, travel, velocity, dt):
         self.state_tensors["velocity"] = velocity
 
 class CIMMotor(Motor):
