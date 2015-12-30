@@ -1,4 +1,4 @@
-from components import KOPAssembly, SpeedController, CIMMotor, GearBox, KOPWheels, OneDimensionalLoad
+from components import KOPAssembly, SpeedController, CIMMotor, GearBox, KOPWheels, SimpleWheels, OneDimensionalLoad
 import math
 import numpy as np
 
@@ -11,7 +11,8 @@ class MyRobotDynamics:
         self.lift_speed_controller = SpeedController()
         self.lift_motor = CIMMotor(self.lift_speed_controller)
         self.lift_gearbox = GearBox([self.lift_motor], 20, 0)
-        self.lift_wheel = KOPWheels([self.lift_gearbox], 3, 6, 30)
+        self.lift_wheel = KOPWheels([self.lift_gearbox], 1, 1, 30)
+        #self.lift_wheel = SimpleWheels([self.lift_gearbox], 1)
         self.lift_load = OneDimensionalLoad([self.lift_wheel], 60/32)
         self.lift_load.build_functions()
 

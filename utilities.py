@@ -39,27 +39,31 @@ def integrate_via_ode(expression, integral, wrt, init_val, consider_constant=Non
     """
 
     if expression.ndim == 0:
-        # Matrix exponential ODE solution
         A = theano.grad(expression, integral, consider_constant=consider_constant)
-        b = theano.printing.Print("b")(expression - A*integral)
-        x_star = -T.dot(T.inv(A), b)
-        special_e = T.exp(A*wrt)
-        result = x_star - T.dot(special_e, (init_val - x_star))
-        return ifelse(T.isnan(x_star), init_val + expression*wrt, result)
-
     else:
-        # Taylor series ODE solution
         A = theano.printing.Print("A")(theano.gradient.jacobian(expression, integral, consider_constant=consider_constant))
-        b = theano.printing.Print("b")(expression - T.dot(A, integral))
+    b = expression - T.dot(integral, A)
 
-        def series_advance(i, last_term, A, wrt):
-            next_term = T.dot(A, last_term)*wrt/i
-            return next_term, theano.scan_module.until(T.all(abs(next_term) < 10e-5))
+    # Matrix exponentiation method
+    x_star = theano.printing.Print("x star")(-T.dot(T.inv(A), b))
+    special_e = T.exp(A*wrt)
+    meth1_res = x_star - T.dot(special_e, (init_val - x_star))
+    #meth1_res = ifelse(T.isnan(x_star), init_val + expression*wrt, result)
 
+    # Taylor series ODE solution
+
+    def series_advance(i, last_term, A, wrt):
+        next_term = T.dot(last_term, A)*wrt/i
+        return next_term, theano.scan_module.until(T.all(abs(next_term) < 10e-5))
+    if expression.ndim == 0:
+        init_term = wrt
+    else:
         init_term = wrt*T.identity_like(A)
-        terms, _ = theano.scan(series_advance,
-                               sequences=[T.arange(2, 200)],
-                               non_sequences=[A, wrt],
-                               outputs_info=init_term,
-                               )
-        return init_val + T.dot(T.sum(terms, axis=0) + init_term, T.dot(A, init_term) + b)
+    terms, _ = theano.scan(series_advance,
+                           sequences=[T.arange(2, 100)],
+                           non_sequences=[A, wrt],
+                           outputs_info=init_term,
+                           )
+    meth2_res = init_val + T.dot(T.sum(terms, axis=0) + init_term, T.dot(init_val, A) + b)
+
+    return ifelse(T.any(T.isnan(x_star)), meth2_res, meth1_res)

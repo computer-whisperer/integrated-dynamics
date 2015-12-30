@@ -43,7 +43,7 @@ class OneDimensionalLoad(DynamicsComponent):
 
         # Integrate it to find new_velocity and travel
         acceleration = force/self.mass
-        new_velocity = integrate_via_ode(acceleration, velocity, dt, self.state["velocity"])
+        new_velocity = integrate_via_ode(acceleration, velocity, dt, self.state["velocity"])#, [velocity, travel])
         new_travel = (self.state["velocity"] + new_velocity)*dt/2
 
         # Recalculate state tensors
@@ -51,7 +51,7 @@ class OneDimensionalLoad(DynamicsComponent):
             "velocity": new_velocity,
             "position": self.state["position"] + new_travel
         }
-        self.build_input_state_tensors(new_travel, new_velocity, dt)
+        #self.build_input_state_tensors(new_travel, new_velocity, dt)
 
     def build_input_state_tensors(self, travel, velocity, dt):
         cast = np.array([0, 1])

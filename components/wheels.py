@@ -23,7 +23,7 @@ class SimpleWheels(DynamicsComponent):
         }
 
     def get_input_force_tensor(self):
-        torque_in = np.array([0.0, 0.0])
+        torque_in = theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
         for component in self.input_components:
             torque_in += np.array([0, 1]) *component["component"].get_force_tensor()
         return torque_in/(self.diameter/2)
@@ -70,7 +70,7 @@ class SolidWheels(SimpleWheels):
         #slip_dir = ifelse(T.any(T.isnan(slip_dir)), np.array([0.0, 0.0]), slip_dir)
         #slip_accel = (self.get_force_tensor() - self.total_dynamic_cof*slip_dir)/self.mass
         slip_accel = (self.get_force_tensor() - self.total_dynamic_cof*self.state["slip"])/self.mass
-        new_slip = theano.printing.Print("slip")(integrate_via_ode(slip_accel, self.state["slip"], dt, self.state["slip"]))#, [velocity, travel]))
+        new_slip = theano.printing.Print("slip")(integrate_via_ode(slip_accel, self.state["slip"], dt, self.state["slip"]))#\, [velocity, travel]))
         #new_slip = theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
 
         wheel_vel = velocity/(self.diameter*math.pi) + new_slip
