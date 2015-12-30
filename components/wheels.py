@@ -6,6 +6,7 @@ from theano.ifelse import ifelse
 import theano.tensor as T
 from utilities import integrate_via_ode
 
+
 class SimpleWheels(DynamicsComponent):
     """
     Simulates the dynamics of a wheel without friction calculations
@@ -18,23 +19,14 @@ class SimpleWheels(DynamicsComponent):
         """
         self.diameter = diameter/12
         super().__init__(components)
-        self.state = {
-            "velocity": theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
-        }
 
-    def get_input_force_tensor(self):
+    def get_input_force_tensor(self, load_state):
         torque_in = theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
+        cast = np.array([0, 1])
+        input_load_state = load_state[:, 1]/(math.pi*self.diameter)
         for component in self.input_components:
-            torque_in += np.array([0, 1]) *component["component"].get_force_tensor()
+            torque_in += cast * component["component"].get_force_tensor(input_load_state)
         return torque_in/(self.diameter/2)
-
-    def build_state_tensors(self, travel, velocity, dt):
-        wheel_vel = velocity/(math.pi*self.diameter)
-        wheel_travel = travel/(math.pi*self.diameter)
-        self.state_tensors = {
-            "velocity": wheel_vel
-        }
-        self.build_input_state_tensors(wheel_travel[1], wheel_vel[1], dt)
 
 
 class SolidWheels(SimpleWheels):
@@ -56,16 +48,16 @@ class SolidWheels(SimpleWheels):
     def get_force_tensor(self):
         force = self.get_input_force_tensor()/(self.diameter/2)
         #return force - self.total_static_cof*self.state_tensors["slip"]/T.sum(self.state["slip"]**2)**.5
-        return force - self.total_static_cof*self.state_tensors["slip"]
+        return force - self.total_static_cof*self.state_derivatives["slip"]
 
-    def build_state_tensors(self, travel, velocity, dt):
+    def build_state_updates(self, travel, velocity, dt):
         wheel_vel = velocity/(self.diameter*math.pi) + self.state["slip"]
         wheel_travel = travel/(self.diameter*math.pi) + self.state["slip"]*dt
-        self.state_tensors = {
+        self.state_derivatives = {
             "velocity": wheel_vel,
             "slip": self.state["slip"]
         }
-        self.build_input_state_tensors(wheel_travel[1], wheel_vel[1], dt)
+        self.build_source_state_derivatives(wheel_travel[1], wheel_vel[1], dt)
         #slip_dir = self.state["slip"]/T.sum(self.state["slip"]**2)**.5
         #slip_dir = ifelse(T.any(T.isnan(slip_dir)), np.array([0.0, 0.0]), slip_dir)
         #slip_accel = (self.get_force_tensor() - self.total_dynamic_cof*slip_dir)/self.mass
@@ -75,11 +67,11 @@ class SolidWheels(SimpleWheels):
 
         wheel_vel = velocity/(self.diameter*math.pi) + new_slip
         wheel_travel = travel/(self.diameter*math.pi) + new_slip*dt
-        self.state_tensors = {
+        self.state_derivatives = {
             "velocity": wheel_vel,
             "slip": new_slip
         }
-        self.build_input_state_tensors(wheel_travel[1], wheel_vel[1], dt)
+        self.build_source_state_derivatives(wheel_travel[1], wheel_vel[1], dt)
 
 
 class KOPWheels(SolidWheels):

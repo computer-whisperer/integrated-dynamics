@@ -2,6 +2,7 @@ import math
 import numpy as np
 import theano
 from theano import tensor as T
+from theano.tensor import slinalg
 from theano.ifelse import ifelse
 
 
@@ -41,17 +42,20 @@ def integrate_via_ode(expression, integral, wrt, init_val, consider_constant=Non
     if expression.ndim == 0:
         A = theano.grad(expression, integral, consider_constant=consider_constant)
     else:
-        A = theano.printing.Print("A")(theano.gradient.jacobian(expression, integral, consider_constant=consider_constant))
+        A = theano.gradient.jacobian(expression, integral, consider_constant=consider_constant)
     b = expression - T.dot(integral, A)
 
+    # Equation given by http://math.stackexchange.com/questions/1567784/matrix-differential-equation-xt-axtb-solution-defined-for-non-invertible/1567806?noredirect=1#comment3192556_1567806
+
     # Matrix exponentiation method
-    x_star = theano.printing.Print("x star")(-T.dot(T.inv(A), b))
-    special_e = T.exp(A*wrt)
-    meth1_res = x_star - T.dot(special_e, (init_val - x_star))
-    #meth1_res = ifelse(T.isnan(x_star), init_val + expression*wrt, result)
+    eat = slinalg.expm(A*wrt)
 
-    # Taylor series ODE solution
+    # Two methods to calculate the integral:
 
+    # e^(at) method, given by http://wolfr.am/9mNgcOgM
+    eat_integral = T.dot(eat-1, T.inv(A))
+
+    # Taylor series method
     def series_advance(i, last_term, A, wrt):
         next_term = T.dot(last_term, A)*wrt/i
         return next_term, theano.scan_module.until(T.all(abs(next_term) < 10e-5))
@@ -64,6 +68,9 @@ def integrate_via_ode(expression, integral, wrt, init_val, consider_constant=Non
                            non_sequences=[A, wrt],
                            outputs_info=init_term,
                            )
-    meth2_res = init_val + T.dot(T.sum(terms, axis=0) + init_term, T.dot(init_val, A) + b)
+    taylor_integral = T.sum(terms, axis=0) + init_term
 
-    return ifelse(T.any(T.isnan(x_star)), meth2_res, meth1_res)
+    # Decide which integral to use, preferring the eat method when it works
+    integral = ifelse(T.any(T.isnan(eat_integral)), taylor_integral, eat_integral)
+
+    return T.dot(eat, init_val) + T.dot(integral, b)

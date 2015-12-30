@@ -1,6 +1,7 @@
 from components import DynamicsComponent
 import theano
 
+
 class GearBox(DynamicsComponent):
     """
     Simulates the dynamics of a gearbox with one or more motors attached
@@ -15,13 +16,16 @@ class GearBox(DynamicsComponent):
             "velocity": theano.shared(0.0, theano.config.floatX)
         }
 
-    def get_force_tensor(self):
-        torque_in = self.get_input_force_tensor()
+    def get_force_tensor(self, load_state):
+        self.load_state = load_state
+        torque_in = self.get_input_force_tensor(load_state*self.gear_ratio)
         return torque_in*self.gear_ratio
 
-    def build_state_tensors(self, travel, velocity, dt):
-        self.state_tensors = {
-            "position": self.state["position"] + travel,
-            "velocity": velocity
+    def build_state_updates(self):
+        self.state_derivatives = {
+            "position": self.load_state[1],
         }
-        self.build_input_state_tensors(travel*self.gear_ratio, velocity*self.gear_ratio, dt)
+        self.state_updates = {
+            "velocity": self.load_state[1]
+        }
+        super().build_state_updates()

@@ -25,44 +25,26 @@ class OneDimensionalLoad(DynamicsComponent):
             "inverted": inverted
         })
 
-    def get_force_tensor(self):
-        total_force = 0
+    def get_force_tensor(self, load_vel):
+        self.load_vel = load_vel
+        self.force_out = 0
         for component in self.input_components:
-            total_force += component["component"].get_force_tensor()[1] * (-1 if component["inverted"] else 1)
-        return total_force
+            sign = (-1 if component["inverted"] else 1)
+            self.force_out += component["component"].get_force_tensor(load_vel*sign * np.array([0, 1]))[1] * sign
+        return self.force_out
 
-    def build_state_tensors(self, travel, velocity, dt):
-
-        # Get the current force out in terms of velocity
-        self.state_tensors = {
-            "velocity": velocity,
-            "position": self.state["position"] + travel
+    def build_state_updates(self):
+        self.state_derivatives = {
+            "velocity": self.force_out/self.mass,
+            "position": self.load_vel
         }
-        self.build_input_state_tensors(travel, velocity, dt)
-        force = self.get_force_tensor()
-
-        # Integrate it to find new_velocity and travel
-        acceleration = force/self.mass
-        new_velocity = integrate_via_ode(acceleration, velocity, dt, self.state["velocity"])#, [velocity, travel])
-        new_travel = (self.state["velocity"] + new_velocity)*dt/2
-
-        # Recalculate state tensors
-        self.state_tensors = {
-            "velocity": new_velocity,
-            "position": self.state["position"] + new_travel
-        }
-        #self.build_input_state_tensors(new_travel, new_velocity, dt)
-
-    def build_input_state_tensors(self, travel, velocity, dt):
-        cast = np.array([0, 1])
-        for component in self.input_components:
-            component["component"].build_state_tensors(travel*cast, velocity*cast, dt)
+        super().build_state_updates()
 
     def build_functions(self):
         dt = T.scalar(dtype=theano.config.floatX)
-        self.build_state_tensors(self.state["velocity"]*dt, self.state["velocity"], dt)
+        self.build_state_updates(self.state["velocity"] * dt, self.state["velocity"], dt)
         shared_vars = self.get_update_tensors()
-        self.update_state = theano.function([dt], [self.state_tensors["position"], self.state_tensors["velocity"]], updates=shared_vars, profile=False)
+        self.update_state = theano.function([dt], [self.state_derivatives["position"], self.state_derivatives["velocity"]], updates=shared_vars, profile=False)
 
 
 class TwoDimensionalLoad(OneDimensionalLoad):
@@ -110,8 +92,8 @@ class TwoDimensionalLoad(OneDimensionalLoad):
             input_force += T.dot(force, origin_to_bot_rot)
         return input_force
 
-    def build_input_state_tensors(self, travel, velocity, dt):
-        world_to_robot_rot = rot_matrix(-self.state_tensors["position"][2] + travel[2] / 2)
+    def build_source_state_derivatives(self, travel, velocity, dt):
+        world_to_robot_rot = rot_matrix(-self.state_derivatives["position"][2] + travel[2] / 2)
         bot_travel = T.dot(travel, world_to_robot_rot)
         bot_velocity = T.dot(velocity, world_to_robot_rot)
 
@@ -120,14 +102,14 @@ class TwoDimensionalLoad(OneDimensionalLoad):
             bot_to_origin_rot += np.array([[0,0,0],[0,0,0],[1,0,0]]) * math.sin(-component["angle_to_perpendicular"])/component["distance_to_cog"]
             bot_to_origin_rot += np.array([[0,0,0],[0,0,0],[0,1,0]]) * math.cos(-component["angle_to_perpendicular"])/component["distance_to_cog"]
 
-            component["component"].build_state_tensors(
+            component["component"].build_state_updates(
                 T.dot(bot_travel, bot_to_origin_rot)[:2],
                 T.dot(bot_velocity, bot_to_origin_rot)[:2],
                 dt)
 
     def build_integration(self, dt):
         fake_travel = self.state["velocity"]*dt
-        self.build_state_tensors(fake_travel, self.state["velocity"])
+        self.build_state_updates(fake_travel, self.state["velocity"])
         force = self.get_force_tensor()
         acceleration = force/self.mass
 
@@ -149,4 +131,4 @@ class TwoDimensionalLoad(OneDimensionalLoad):
 
         new_velocity = self.state["velocity"] + new_deltav
         real_travel = (self.state["velocity"] + new_velocity)*dt/2
-        self.build_state_tensors(real_travel, new_velocity)
+        self.build_state_updates(real_travel, new_velocity)

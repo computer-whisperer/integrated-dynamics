@@ -3,11 +3,13 @@ import numpy as np
 import theano
 import theano.tensor as T
 
+
 class DynamicsComponent:
 
     def __init__(self, input_components=None):
         self.input_components = []
-        self.state_tensors = {}
+        self.state_derivatives = {}
+        self.state_updates = {}
         self.state = {}
         if input_components is not None:
             for component in input_components:
@@ -16,23 +18,25 @@ class DynamicsComponent:
     def add_input(self, component):
         self.input_components.append({"component": component})
 
-    def get_input_force_tensor(self):
-        return T.sum([component["component"].get_force_tensor() for component in self.input_components])
+    def get_input_force_tensor(self, load_state):
+        return T.sum([component["component"].get_force_tensor(load_state) for component in self.input_components])
 
-    def get_force_tensor(self):
-        return self.get_input_force_tensor()
+    def get_force_tensor(self, load_state):
+        return self.get_input_force_tensor(load_state)
 
-    def build_state_tensors(self, travel, velocity, dt):
-        self.build_input_state_tensors(travel, velocity, dt)
-
-    def build_input_state_tensors(self, travel, velocity, dt):
+    def build_state_updates(self):
         for component in self.input_components:
-            component["component"].build_state_tensors(travel, velocity, dt)
+            component["component"].build_state_updates()
 
-    def get_update_tensors(self):
-        tensors = []
+    def get_state_updates(self):
+        updates = []
+        derivatives = []
         for component in self.input_components:
-            tensors.extend(component["component"].get_update_tensors())
-        for state in self.state_tensors:
-            tensors.append([self.state[state], self.state_tensors[state]])
-        return tensors
+            new_updates, new_derivatives = component["component"].get_update_tensors()
+            updates.extend(new_updates)
+            derivatives.extend(new_derivatives)
+        for state in self.state_derivatives:
+            derivatives.append([self.state[state], self.state_derivatives[state]])
+        for state in self.state_updates:
+            updates.append([self.state[state], self.state_updates[state]])
+        return updates, derivatives
