@@ -1,50 +1,40 @@
 import math
+
 import numpy as np
 import theano
 from theano import tensor as T
-from components import DynamicsComponent
-from utilities import rot_matrix, integrate_via_ode
+from .utilities import rot_matrix
 
 
-class OneDimensionalLoad(DynamicsComponent):
+class OneDimensionalLoad:
     """
     Simulates the dynamics of a one-dimensional load provided any number of motive forces.
     """
 
     def __init__(self, components, mass):
         self.mass = mass
-        super().__init__(components)
-        self.state = {
-            "velocity": theano.shared(0.0, theano.config.floatX),
-            "position": theano.shared(0.0, theano.config.floatX)
-        }
+        self.velocity = theano.shared(0.0, theano.config.floatX)
+        self.position = theano.shared(0.0, theano.config.floatX)
+        self.wheels = []
+        for component in components:
+            self.add_wheel(component)
 
-    def add_input(self, component, inverted=False):
-        self.input_components.append({
-            "component": component,
+    def add_wheel(self, component, inverted=False):
+        self.wheels.append({
+            "wheel": component,
             "inverted": inverted
         })
 
-    def get_force_tensor(self, load_vel):
-        self.load_vel = load_vel
-        self.force_out = 0
-        for component in self.input_components:
-            sign = (-1 if component["inverted"] else 1)
-            self.force_out += component["component"].get_force_tensor(load_vel*sign * np.array([0, 1]))[1] * sign
-        return self.force_out
-
-    def build_state_updates(self):
-        self.state_derivatives = {
-            "velocity": self.force_out/self.mass,
-            "position": self.load_vel
-        }
-        super().build_state_updates()
-
-    def build_functions(self):
-        dt = T.scalar(dtype=theano.config.floatX)
-        self.build_state_updates(self.state["velocity"] * dt, self.state["velocity"], dt)
-        shared_vars = self.get_update_tensors()
-        self.update_state = theano.function([dt], [self.state_derivatives["position"], self.state_derivatives["velocity"]], updates=shared_vars, profile=False)
+    def get_state_derivatives(self, mass):
+        state_derivatives = {
+            self.position: self.velocity,
+            self.velocity: 0}
+        for wheel in self.wheels:
+            caster = -1 if wheel["inverted"] else 1
+            wheel["wheel"].velocity = np.array([0, 1]) * self.velocity * caster
+            state_derivatives.update(wheel["wheel"].get_state_derivatives(mass))
+            state_derivatives[self.velocity] += state_derivatives[wheel["wheel"].velocity][1] * caster
+        return state_derivatives
 
 
 class TwoDimensionalLoad(OneDimensionalLoad):

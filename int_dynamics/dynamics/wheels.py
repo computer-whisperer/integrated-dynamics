@@ -1,32 +1,26 @@
 import math
+
 import numpy as np
-from components import DynamicsComponent
 import theano
-from theano.ifelse import ifelse
-import theano.tensor as T
-from utilities import integrate_via_ode
+from .utilities import integrate_via_ode
 
 
-class SimpleWheels(DynamicsComponent):
+class SimpleWheels:
     """
     Simulates the dynamics of a wheel without friction calculations
     """
 
-    def __init__(self, components, diameter):
-        """
-        :param components: The list of objects providing torque to drive the wheel(s) from
-        :param diameter: The diameter of the wheel(s) in inches
-        """
+    def __init__(self, gearbox, diameter):
         self.diameter = diameter/12
-        super().__init__(components)
+        self.gearbox = gearbox
+        self.velocity = theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
 
-    def get_input_force_tensor(self, load_state):
-        torque_in = theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
-        cast = np.array([0, 1])
-        input_load_state = load_state[:, 1]/(math.pi*self.diameter)
-        for component in self.input_components:
-            torque_in += cast * component["component"].get_force_tensor(input_load_state)
-        return torque_in/(self.diameter/2)
+    def get_state_derivatives(self, load_mass):
+        mech_advantage = 1/(math.pi * self.diameter)
+        self.gearbox.velocity = self.velocity[1]*mech_advantage
+        state_derivatives = self.gearbox.get_state_derivatives(load_mass)
+        state_derivatives[self.velocity] = np.array([0, 1])*state_derivatives[self.gearbox.velocity]/mech_advantage
+        return state_derivatives
 
 
 class SolidWheels(SimpleWheels):

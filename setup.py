@@ -40,13 +40,13 @@ with open(join(setup_dir, 'README.rst'), 'r') as readme_file:
     long_description = readme_file.read()
 
 setup(
-    name='integrated-dynamics',
+    name='int_dynamics',
     version=__version__,
     description='A versatile dynamics library designed for RobotPy',
     long_description=long_description,
     author='Christian Balcom',
     author_email='robot.inventor@gmail.com',
-    url='https://github.com/Team4819/integrated-dynamics',
+    url='https://github.com/Team4819/int_dynamics',
     keywords='frc first robotics',
     install_requires=['theano', 'numpy'],
     packages=find_packages(),

@@ -1,5 +1,6 @@
 import theano
-from dynamics import get_dynamics
+
+from examples.dynamics import get_dynamics
 
 robot_dynamics_1 = get_dynamics()
 results, _ = theano.scan(lambda: robot_dynamics_1.drivetrain.drivetrain_load.state_tensors["drivetrain"],

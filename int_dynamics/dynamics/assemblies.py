@@ -1,6 +1,6 @@
 import math
 
-from components import SpeedController, CIMMotor, GearBox, KOPWheels, TwoDimensionalLoad
+from . import SpeedController, CIMMotor, GearBox, KOPWheels, TwoDimensionalLoad
 
 
 class KOPAssembly:

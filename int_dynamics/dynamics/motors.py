@@ -1,7 +1,7 @@
-from components import DynamicsComponent
+import theano
 
 
-class Motor(DynamicsComponent):
+class Motor:
     """
     Simulates the dynamics of any number of motors connected to a common power supply
     """
@@ -9,13 +9,17 @@ class Motor(DynamicsComponent):
     def __init__(self, power_supply, free_rps_per_volt, stall_torque_per_volt):
         self.free_rps_per_volt = free_rps_per_volt
         self.stall_torque_per_volt = stall_torque_per_volt
-        super().__init__([power_supply])
+        self.power_supply = power_supply
+        self.velocity = theano.shared(0.0, theano.config.floatX)
 
-    def get_force_tensor(self, load_state):
-        voltage_in = self.get_input_force_tensor(load_state)
-        torque_out = self.stall_torque_per_volt*voltage_in + \
-                     load_state[1] * -self.stall_torque_per_volt/self.free_rps_per_volt
-        return torque_out
+    def get_state_derivatives(self, load_mass):
+        voltage_in = self.power_supply.voltage_out
+        stall_torque = self.stall_torque_per_volt*voltage_in
+        torque = stall_torque - self.velocity * self.stall_torque_per_volt/self.free_rps_per_volt
+        return {
+            self.velocity: torque/load_mass
+        }
+
 
 class CIMMotor(Motor):
     def __init__(self, power_supply):
