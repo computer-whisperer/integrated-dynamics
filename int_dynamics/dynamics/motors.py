@@ -23,8 +23,9 @@ class Motor:
 
 class CIMMotor(Motor):
     def __init__(self, power_supply):
-        Motor.__init__(self, power_supply, 7.37, 1.75)
+        Motor.__init__(self, power_supply, 7.37, 1.79)
+
 
 class DualCIMMotor(Motor):
     def __init__(self, power_supply):
-        Motor.__init__(self, power_supply, 14.73, 3.5)
+        Motor.__init__(self, power_supply, 7.37, 3.58)

@@ -1,7 +1,9 @@
 import math
-
 import numpy as np
 import theano
+import theano.tensor as T
+from theano.tensor import slinalg
+from theano.ifelse import ifelse
 from .utilities import integrate_via_ode
 
 
@@ -16,62 +18,46 @@ class SimpleWheels:
         self.velocity = theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
 
     def get_state_derivatives(self, load_mass):
-        mech_advantage = 1/(math.pi * self.diameter)
-        self.gearbox.velocity = self.velocity[1]*mech_advantage
+        circumference = (math.pi * self.diameter)
+        self.gearbox.velocity = self.velocity[1]/circumference
+
         state_derivatives = self.gearbox.get_state_derivatives(load_mass)
-        state_derivatives[self.velocity] = np.array([0, 1])*state_derivatives[self.gearbox.velocity]/mech_advantage
+        state_derivatives[self.velocity] = np.array([0, 1])*state_derivatives[self.gearbox.velocity]*circumference
         return state_derivatives
 
 
-class SolidWheels(SimpleWheels):
+class SolidWheels:
     """
-    Simulates the dynamics of a set of solid wheels attached to a single gearbox
+    Simulates the dynamics of a wheel with friction calculations
     """
 
-    def __init__(self, components, count, diameter, static_cof, dynamic_cof, normal_force):
-        super().__init__(components, diameter)
-        self.count = count
+    def __init__(self, gearbox, count, diameter, static_cof, dynamic_cof, normal_force):
+        self.diameter = diameter/12
+        self.gearbox = gearbox
         self.mass = .25*count
         self.total_static_cof = normal_force*static_cof
         self.total_dynamic_cof = normal_force*dynamic_cof
-        self.state = {
-            "velocity": theano.shared(np.array([0.0, 0.0]), theano.config.floatX),
-            "slip": theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
-        }
+        # Ground velocity
+        self.velocity = theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
+        # Difference between wheel surface velocity and ground velocity
+        self.slip = theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
 
-    def get_force_tensor(self):
-        force = self.get_input_force_tensor()/(self.diameter/2)
-        #return force - self.total_static_cof*self.state_tensors["slip"]/T.sum(self.state["slip"]**2)**.5
-        return force - self.total_static_cof*self.state_derivatives["slip"]
+    def get_state_derivatives(self, load_mass):
+        circumference = (math.pi * self.diameter)
+        self.gearbox.velocity = (self.velocity[1] + self.slip[1])/circumference
+        state_derivatives = self.gearbox.get_state_derivatives(load_mass)
 
-    def build_state_updates(self, travel, velocity, dt):
-        wheel_vel = velocity/(self.diameter*math.pi) + self.state["slip"]
-        wheel_travel = travel/(self.diameter*math.pi) + self.state["slip"]*dt
-        self.state_derivatives = {
-            "velocity": wheel_vel,
-            "slip": self.state["slip"]
-        }
-        self.build_source_state_derivatives(wheel_travel[1], wheel_vel[1], dt)
-        #slip_dir = self.state["slip"]/T.sum(self.state["slip"]**2)**.5
-        #slip_dir = ifelse(T.any(T.isnan(slip_dir)), np.array([0.0, 0.0]), slip_dir)
-        #slip_accel = (self.get_force_tensor() - self.total_dynamic_cof*slip_dir)/self.mass
-        slip_accel = (self.get_force_tensor() - self.total_dynamic_cof*self.state["slip"])/self.mass
-        new_slip = theano.printing.Print("slip")(integrate_via_ode(slip_accel, self.state["slip"], dt, self.state["slip"]))#\, [velocity, travel]))
-        #new_slip = theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
+        force_in = state_derivatives[self.gearbox.velocity]*circumference*load_mass
 
-        wheel_vel = velocity/(self.diameter*math.pi) + new_slip
-        wheel_travel = travel/(self.diameter*math.pi) + new_slip*dt
-        self.state_derivatives = {
-            "velocity": wheel_vel,
-            "slip": new_slip
-        }
-        self.build_source_state_derivatives(wheel_travel[1], wheel_vel[1], dt)
+        force_out = T.clip(force_in, -self.total_static_cof, self.total_static_cof) + self.slip
+        state_derivatives[self.slip] = (force_in - force_out)/self.mass
+        state_derivatives[self.velocity] = force_out/self.mass
+        return state_derivatives
 
 
 class KOPWheels(SolidWheels):
     def __init__(self, gearbox, diameter, count, normal_force):
-        SolidWheels.__init__(self, gearbox, count, diameter, 1.07, .9, normal_force)
-
+        SolidWheels.__init__(self, gearbox, count, diameter, .00107, .9, normal_force)
 
 class MecanumWheel:
     """

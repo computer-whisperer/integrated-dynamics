@@ -1,11 +1,10 @@
 import wpilib
-from robotpy_ext.physics import drivetrains
-from numpy import *
-import time
 from matplotlib import use
+from numpy import *
+from robotpy_ext.physics import drivetrains
+
 use("GTK3Agg")
 from matplotlib import cm
-from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 import matplotlib.pyplot as plt
 from int_dynamics import ilqg

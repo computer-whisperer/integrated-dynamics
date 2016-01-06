@@ -18,7 +18,7 @@ class GearBox:
             motor.velocity = self.velocity*self.gear_ratio
         state_derivatives = {
             self.velocity: 0,
-            #self.position: self.velocity
+            self.position: self.velocity
         }
         for motor in self.motors:
             state_derivatives.update(motor.get_state_derivatives(load_mass))

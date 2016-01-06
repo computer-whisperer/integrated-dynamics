@@ -28,7 +28,8 @@ class OneDimensionalLoad:
     def get_state_derivatives(self, mass):
         state_derivatives = {
             self.position: self.velocity,
-            self.velocity: 0}
+            self.velocity: 0
+        }
         for wheel in self.wheels:
             caster = -1 if wheel["inverted"] else 1
             wheel["wheel"].velocity = np.array([0, 1]) * self.velocity * caster
