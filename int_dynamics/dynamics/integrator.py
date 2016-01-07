@@ -3,7 +3,6 @@ import theano
 import theano.tensor as T
 from theano.printing import Print
 from theano.tensor import slinalg
-from theano.ifelse import ifelse
 
 
 def build_integrator(state_derivatives):
