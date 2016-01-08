@@ -5,7 +5,12 @@ from theano.printing import Print
 from theano.tensor import slinalg
 
 
-def build_integrator(state_derivatives):
+class Integrator:
+
+    def __init__(self):
+        self.updates = []
+
+    def add_ode_update(self, state_derivatives, ekf_update=False):
         dt = T.scalar(dtype=theano.config.floatX)
 
         # Trim away any states that are not shared variables
@@ -76,6 +81,7 @@ def build_integrator(state_derivatives):
         init_term = T.identity_like(A)*dt
         def series_advance(i, last_term, A, wrt):
             next_term = T.dot(last_term, A)*wrt/i
+            next_term = T.unbroadcast(next_term, 0, 1)
             return next_term, theano.scan_module.until(T.all(abs(next_term) < 10e-6))
         terms, _ = theano.scan(series_advance,
                                sequences=[T.arange(2, 200)],
@@ -88,6 +94,7 @@ def build_integrator(state_derivatives):
         # integral = ifelse(T.any(T.isnan(eat_integral)), taylor_integral, eat_integral)
 
         new_state = (T.dot(slinalg.expm(A*dt), state_full) + T.dot(integral, b)).flatten()
+
         index = 0
         updates = []
         for state in states:
@@ -99,5 +106,18 @@ def build_integrator(state_derivatives):
             state_update = state_update.reshape(T.shape(state))
             updates.append((state, state_update))
             index += state_len
+        self.updates.append(theano.function([dt], [new_state], updates=updates))
 
-        return theano.function([dt], [new_state], updates=updates, profile=False)
+    def add_sensor_update(self, sensor_data, add_noise=False):
+        if not isinstance(sensor_data, list):
+            sensor_data = [sensor_data]
+        updates = []
+        for sensor in sensor_data:
+            for state in sensor:
+                updates.append((state, sensor[state]["update"]))
+        fun = theano.function([], [], updates=updates)
+        self.updates.append(lambda dt: fun())
+
+    def update_physics(self, dt):
+        for update in self.updates:
+            update(dt)
