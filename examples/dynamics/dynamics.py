@@ -21,7 +21,9 @@ class MyRobotDynamics:
         self.get_state()
 
     def update_sensors(self):
-        pass
+        self.drivetrain.gyro.angle.set_value(self.sensors["gyro"])
+        self.drivetrain.left_encoder.angle.set_value(self.sensors["left_encoder"])
+        self.drivetrain.right_encoder.angle.set_value(self.sensors["right_encoder"])
 
     def update_controls(self, hal_data=None):
         if hal_data is not None:
@@ -38,14 +40,14 @@ class MyRobotDynamics:
 
     def get_sensors(self, hal_data=None):
         self.sensors = {
-            "gyro": self.drivetrain.get_state()["position"][2],
+            "gyro": self.drivetrain.gyro.angle.get_value() + np.random.normal(0, .05),
             "left_encoder": self.drivetrain.left_gearbox.position.get_value(),
             "right_encoder": self.drivetrain.right_gearbox.position.get_value()
         }
         if hal_data is not None:
-            hal_data['analog_in'][0]['accumulator_value'] = math.degrees(self.drivetrain.gyro.angle.get_value()) / 2.7901785714285715e-12
-            hal_data['encoder'][0]['count'] = math.degrees(self.drivetrain.left_encoder.position.get_value())
-            hal_data['encoder'][1]['count'] = math.degrees(self.drivetrain.right_encoder.position.get_value())
+            hal_data['analog_in'][0]['accumulator_value'] = math.degrees(self.sensors["gyro"]) / 2.7901785714285715e-12
+            hal_data['encoder'][0]['count'] = math.degrees(self.sensors["left_encoder"])
+            hal_data['encoder'][1]['count'] = math.degrees(self.sensors["right_encoder"])
 
     def get_state(self):
         self.state = {

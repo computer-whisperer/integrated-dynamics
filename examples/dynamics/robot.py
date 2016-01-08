@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 import wpilib
+from .dynamics import get_dynamics
 
 class MyRobot(wpilib.SampleRobot):
     '''Main robot class'''
 
     def robotInit(self):
         '''Robot-wide initialization code should go here'''
+
+        self.dynamics = get_dynamics()
 
         self.stick = wpilib.Joystick(0)
 
@@ -23,7 +26,7 @@ class MyRobot(wpilib.SampleRobot):
         self.right_encoder = wpilib.Encoder(2, 3)
 
         # Position gets automatically updated as robot moves
-        self.gyro = wpilib.AnalogGyro(0)
+        self.gyro = wpilib.Gyro(0)
 
     def disabled(self):
         '''Called when the robot is disabled'''
@@ -50,12 +53,22 @@ class MyRobot(wpilib.SampleRobot):
 
         while self.isOperatorControl() and self.isEnabled():
 
-            self.robot_drive.arcadeDrive(self.stick.getX(), self.stick.getY())
-
+            x = self.stick.getX()
+            y = self.stick.getY()
+            left = y-x
+            right = y+x
+            self.left_motor.set(left)
+            self.right_motor.set(right)
+            self.dynamics.controls["left_motor"] = left
+            self.dynamics.controls["right_motor"] = right
             wpilib.Timer.delay(0.04)
-        print(self.left_encoder.get())
-        print(self.right_encoder.get())
-        print(self.gyro.getAngle())
+        self.dynamics.sensors = {
+            "left_encoder": self.left_encoder.get(),
+            "right_encoder": self.right_encoder.get(),
+            "gyro": self.gyro.getAngle()
+        }
+        self.dynamics.update_controls()
+
 
 
 if __name__ == '__main__':

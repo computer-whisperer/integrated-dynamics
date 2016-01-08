@@ -1,17 +1,23 @@
 __author__ = 'christian'
+import numpy as np
+from scipy.linalg import block_diag
 import theano
 import theano.tensor as T
+from theano import ifelse
 from theano.printing import Print
 from theano.tensor import slinalg
-
+from . import utilities
 
 class Integrator:
 
     def __init__(self):
         self.updates = []
+        self.state_list = []
+        self.state_vector = None
+        self.new_state = None
+        self.dt = T.scalar(dtype=theano.config.floatX)
 
-    def add_ode_update(self, state_derivatives, ekf_update=False):
-        dt = T.scalar(dtype=theano.config.floatX)
+    def add_ode_update(self, state_derivatives):
 
         # Trim away any states that are not shared variables
 
@@ -22,52 +28,22 @@ class Integrator:
         state_derivatives = trimmed_state_derivatives
 
         # build two-dimensional states and derivatives
-        states = []
+        derivatives = []
         twodim_states = []
         for state in state_derivatives:
             # save state to a list for reference
-            states.append(state)
+            self.state_list.append(state)
+            derivatives.append(state_derivatives[state])
 
             # Correct state dimensions
-            if state.ndim == 0:
-                state = state.dimshuffle('x', 'x')
-            elif state.ndim == 1:
-                state = state.dimshuffle(0, 'x')
+            state = utilities.ensure_column(state)
             twodim_states.append(state)
 
         # Build complete state vector
-        state_full = T.concatenate(twodim_states)
+        self.state_vector = T.concatenate(twodim_states)
 
-        state_A = []
-        state_b = []
-        for state in states:
-            A_blocks = theano.gradient.jacobian(state_derivatives[state], states, disconnected_inputs='ignore')
-
-            # Correct dimensions
-            for i in range(len(A_blocks)):
-
-                if A_blocks[i].ndim == 0:
-                    A_blocks[i] = A_blocks[i].dimshuffle('x', 'x')
-                elif A_blocks[i].ndim == 1:
-                    if state.ndim == 0:
-                        A_blocks[i] = A_blocks[i].dimshuffle('x', 0)
-                    else:
-                        A_blocks[i] = A_blocks[i].dimshuffle(0, 'x')
-
-            # shuffle derivative to column vector
-            if state.ndim == 0:
-                deriv = state_derivatives[state].dimshuffle('x', 'x')
-            else:
-                deriv = state_derivatives[state].dimshuffle(0, 'x')
-
-            # Stack A_blocks
-            A_row = T.concatenate(A_blocks, axis=1)
-            b = deriv - T.dot(A_row, state_full)
-
-            state_A.append(A_row)
-            state_b.append(b)
-        A = T.concatenate(state_A)
-        b = T.concatenate(state_b)
+        derivative_matrix, A = utilities.get_list_derivative(derivatives, self.state_list)
+        b = derivative_matrix - T.dot(A, self.state_vector)
 
         # Equation given by http://math.stackexchange.com/questions/1567784/matrix-differential-equation-xt-axtb-solution-defined-for-non-invertible/1567806?noredirect=1#comment3192556_1567806
 
@@ -78,14 +54,14 @@ class Integrator:
         # eat_integral = T.unbroadcast(eat_integral, 0, 1)
 
         # Taylor series method
-        init_term = T.identity_like(A)*dt
+        init_term = T.identity_like(A)*self.dt
         def series_advance(i, last_term, A, wrt):
             next_term = T.dot(last_term, A)*wrt/i
             next_term = T.unbroadcast(next_term, 0, 1)
             return next_term, theano.scan_module.until(T.all(abs(next_term) < 10e-6))
         terms, _ = theano.scan(series_advance,
                                sequences=[T.arange(2, 200)],
-                               non_sequences=[A, dt],
+                               non_sequences=[A, self.dt],
                                outputs_info=init_term,
                                )
         integral = T.sum(terms, axis=0) + init_term
@@ -93,22 +69,47 @@ class Integrator:
         # Decide which integral to use, preferring the eat method when it works
         # integral = ifelse(T.any(T.isnan(eat_integral)), taylor_integral, eat_integral)
 
-        new_state = (T.dot(slinalg.expm(A*dt), state_full) + T.dot(integral, b)).flatten()
+        self.new_state = (T.dot(slinalg.expm(A*self.dt), self.state_vector) + T.dot(integral, b)).flatten()
+        self.update_physics = self.build_updater(self.new_state)
 
-        index = 0
-        updates = []
-        for state in states:
-            if state.ndim == 0:
-                state_len = 1
-            else:
-                state_len = T.shape(state)[0]
-            state_update = new_state[index:index+state_len]
-            state_update = state_update.reshape(T.shape(state))
-            updates.append((state, state_update))
-            index += state_len
-        self.updates.append(theano.function([dt], [new_state], updates=updates))
+    def build_ekf_updater(self, sensor_data):
+        if not isinstance(sensor_data, list):
+            sensor_data = [sensor_data]
+        sensor_states_blocks = []
+        sensor_updates_blocks = []
+        sensor_error_blocks = []
+        for sensor in sensor_data:
+            for state in sensor:
+                sensor_states_blocks.append(utilities.ensure_column(state))
+                sensor_updates_blocks.append(sensor[state]["update"])
+                sensor_error_blocks.append(sensor[state]["covariance"])
+        sensor_state = T.concatenate(sensor_states_blocks)
 
-    def add_sensor_update(self, sensor_data, add_noise=False):
+        sensor_update, sensor_update_derivative = utilities.get_list_derivative(sensor_updates_blocks, self.state_list)
+        sensor_error = block_diag(sensor_error_blocks)
+
+        # Get state derivative
+        new_state, state_derivative = utilities.get_list_derivative(self.new_state, self.state_list)
+
+        # Initialize state covariance
+        self.state_covariance = theano.shared(np.nan, theano.config.floatX)
+
+        last_covariance = ifelse.ifelse(T.isnan(self.state_covariance), T.identity_like(state_derivative), self.state_covariance)
+
+        # predict covariance
+        covarience_prediction = T.dot(state_derivative, last_covariance) + T.dot(last_covariance, state_derivative.T)
+
+        # EKF update
+        kalman_denominator = T.dot(sensor_update_derivative, T.dot(covarience_prediction, sensor_update_derivative.T)) + sensor_error
+        kalman_numerator = T.dot(covarience_prediction, sensor_update_derivative.T)
+        kalman = T.dot(kalman_numerator, T.inv(kalman_denominator))
+        self.new_state = new_state + T.dot(kalman, sensor_state - sensor_update)
+        new_covariance = T.dot(T.identity_like(self.state_covariance) - T.dot(kalman, sensor_update_derivative), covarience_prediction)
+        self.updates.append((self.state_covariance, new_covariance))
+
+        self.ekf_physics_update = self.build_updater(self.new_state)
+
+    def add_sensor_update(self, sensor_data):
         if not isinstance(sensor_data, list):
             sensor_data = [sensor_data]
         updates = []
@@ -118,6 +119,15 @@ class Integrator:
         fun = theano.function([], [], updates=updates)
         self.updates.append(lambda dt: fun())
 
-    def update_physics(self, dt):
-        for update in self.updates:
-            update(dt)
+    def build_updater(self, new_state):
+        index = 0
+        for state in self.state_list:
+            if state.ndim == 0:
+                state_len = 1
+            else:
+                state_len = T.shape(state)[0]
+            state_update = new_state[index:index+state_len]
+            state_update = state_update.reshape(T.shape(state))
+            self.updates.append((state, state_update))
+            index += state_len
+        return theano.function([self.dt], [], updates=self.updates)
