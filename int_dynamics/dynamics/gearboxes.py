@@ -12,7 +12,6 @@ class GearBox:
         self.motors = motors
         self.position = theano.shared(0.0, theano.config.floatX)
         self.velocity = theano.shared(0.0, theano.config.floatX)
-        self.encoder = None
 
     def get_state_derivatives(self, load_moment):
         for motor in self.motors:
@@ -25,10 +24,3 @@ class GearBox:
             state_derivatives.update(motor.get_state_derivatives(load_moment))
             state_derivatives[self.velocity] += state_derivatives[motor.velocity]*self.gear_ratio
         return state_derivatives
-
-    def get_sensor_data(self):
-        if self.encoder is not None:
-            return self.encoder
-
-    def set_encoder(self, tics_per_rev):
-        self.encoder_tics_per_rev = tics_per_rev

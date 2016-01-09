@@ -92,9 +92,9 @@ class Integrator:
         new_state, state_derivative = utilities.get_list_derivative(self.new_state, self.state_list)
 
         # Initialize state covariance
-        self.state_covariance = theano.shared(np.nan, theano.config.floatX)
+        self.state_covariance = theano.shared(np.array([[np.nan]]), theano.config.floatX)
 
-        last_covariance = ifelse.ifelse(T.isnan(self.state_covariance), T.identity_like(state_derivative), self.state_covariance)
+        last_covariance = ifelse.ifelse(T.any(T.isnan(self.state_covariance)), T.identity_like(state_derivative), self.state_covariance)
 
         # predict covariance
         covarience_prediction = T.dot(state_derivative, last_covariance) + T.dot(last_covariance, state_derivative.T)
@@ -105,7 +105,7 @@ class Integrator:
         kalman = T.dot(kalman_numerator, T.inv(kalman_denominator))
         self.new_state = new_state + T.dot(kalman, sensor_state - sensor_update)
         new_covariance = T.dot(T.identity_like(self.state_covariance) - T.dot(kalman, sensor_update_derivative), covarience_prediction)
-        self.updates.append((self.state_covariance, new_covariance))
+        self.updates = [(self.state_covariance, new_covariance)]
 
         self.ekf_physics_update = self.build_updater(self.new_state)
 

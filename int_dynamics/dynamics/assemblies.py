@@ -7,7 +7,7 @@ class KOPAssembly:
     A simple, no-frills KOP drivetrain assembly. 6wd tank with one cim and toughbox per side.
     """
 
-    def __init__(self, bot_weight=120, simple_wheels=False):
+    def __init__(self, bot_weight=120, simple_wheels=False, calc_ekf=False):
         """
         :param bot_weight: (optional) weight of robot in pounds.
         """
@@ -44,6 +44,13 @@ class KOPAssembly:
         ])
 
         self.update_physics = self.drivetrain_integrator.update_physics
+        if calc_ekf:
+            self.drivetrain_integrator.build_ekf_updater([
+                self.gyro.get_sensor_data(),
+                self.left_encoder.get_sensor_data(),
+                self.right_encoder.get_sensor_data()
+            ])
+            self.update_ekf_physics = self.drivetrain_integrator.ekf_physics_update
 
     def set_values(self, left_value, right_value):
         self.left_speed_controller.set_value(left_value)

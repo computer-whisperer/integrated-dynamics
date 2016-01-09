@@ -2,10 +2,10 @@ import wpilib
 from matplotlib import use
 from numpy import *
 from robotpy_ext.physics import drivetrains
-
-use("GTK3Agg")
+#use("tkagg")
 from matplotlib import cm
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
+from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 from int_dynamics import ilqg
 import time
@@ -36,7 +36,7 @@ def cost_func(x, u):
     # running cost
     cost = 0
     #cost += max(3 - .1*linalg.norm(x[:2]-array([0, 5]))**2, 0)
-    cost += 20**((-linalg.norm(x[:2]-array([-2, 5]))**2)/4**2)
+    cost += 20**((-linalg.norm(x[:2]-array([-1, 5]))**2)/8**2)
     cost += 15**((-linalg.norm(x[:2]-array([2.5, 10]))**2)/4**2)
     cost += 15**((-linalg.norm(x[:2]-array([-2, 15]))**2)/4**2)
     cost += 15**((-linalg.norm(x[:2]-array([4, 18]))**2)/4**2)
@@ -62,7 +62,7 @@ def cost_graph(path):
     global ax
     #plt.ion()
     fig = plt.figure()
-    ax = fig.gca(projection='3d')
+    ax = fig.gca()
 
     X = arange(-10, 30, 0.25)
     Y = arange(-5, 25, 0.25)
@@ -73,7 +73,7 @@ def cost_graph(path):
         for y in range(X.shape[1]):
             Z[x, y] = .2*(cost_func(array([X[x, y], Y[x, y], 0]), array([0, 0])))
 
-    surf = ax.plot_surface(X, Y, Z, rstride=1, cstride=1, cmap=cm.coolwarm,
+    surf = ax.plot_surface(X, Y, rstride=1, cstride=1, cmap=cm.coolwarm,
                            linewidth=0, antialiased=False)
     #ax.set_zlim(-1.01, 1.01)
 
@@ -86,7 +86,7 @@ def cost_graph(path):
     for i in range(path.shape[0]):
         path_z[i] = .2*(.05+cost_func(array([path[i, 0], path[i, 1], 0]), array([0, 0])))
 
-    path_line = ax.plot(path[:, 0], path[:, 1], path_z)
+    path_line = ax.plot(path[:, 0], path[:, 1])
 
     plt.show()
 

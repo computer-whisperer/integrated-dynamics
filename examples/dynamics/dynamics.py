@@ -35,6 +35,7 @@ class MyRobotDynamics:
                                    self.controls["right_drive_cim"])
 
     def update_physics(self, dt):
+        self.lift_speed_controller.set_value(1)
         self.lift_integrator.update_physics(dt)
         self.drivetrain.update_physics(dt)
 

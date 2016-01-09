@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import wpilib
-from .dynamics import get_dynamics
+from dynamics import get_dynamics
 
 class MyRobot(wpilib.SampleRobot):
     '''Main robot class'''
@@ -15,18 +15,11 @@ class MyRobot(wpilib.SampleRobot):
         self.left_motor = wpilib.Talon(0)
         self.right_motor = wpilib.Talon(1)
 
-        self.robot_drive = wpilib.RobotDrive(self.left_motor, self.right_motor)
-
-        # The output function of a mecanum drive robot is always
-        # +1 for all output wheels. However, traditionally wired
-        # robots will be -1 on the left, 1 on the right.
-        self.robot_drive.setInvertedMotor(wpilib.RobotDrive.MotorType.kRearLeft, True)
-
         self.left_encoder = wpilib.Encoder(0, 1)
         self.right_encoder = wpilib.Encoder(2, 3)
 
         # Position gets automatically updated as robot moves
-        self.gyro = wpilib.Gyro(0)
+        self.gyro = wpilib.AnalogGyro(0)
 
     def disabled(self):
         '''Called when the robot is disabled'''
@@ -56,18 +49,22 @@ class MyRobot(wpilib.SampleRobot):
             x = self.stick.getX()
             y = self.stick.getY()
             left = y-x
-            right = y+x
+            right = -(y+x)
             self.left_motor.set(left)
             self.right_motor.set(right)
             self.dynamics.controls["left_motor"] = left
             self.dynamics.controls["right_motor"] = right
-            wpilib.Timer.delay(0.04)
-        self.dynamics.sensors = {
+            self.dynamics.sensors["gyro"] = self.gyro.getAngle()
+            self.dynamics.sensors["right_encoder"] = self.right_encoder.get()
+            self.dynamics.sensors["left_encoder"] = self.left_encoder.get()
+            self.dynamics.update_ekf_physics(.1)
+            wpilib.Timer.delay(0.1)
+        print({
             "left_encoder": self.left_encoder.get(),
             "right_encoder": self.right_encoder.get(),
-            "gyro": self.gyro.getAngle()
-        }
-        self.dynamics.update_controls()
+            "gyro": self.gyro.getAngle(),
+            "est_state": self.dynamics.get_state()
+        })
 
 
 

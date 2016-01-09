@@ -10,8 +10,8 @@ class Encoder:
 
     def get_sensor_data(self):
         return {
-            self.position: {"update": self.gearbox.position},
-            self.velocity: {"update": self.gearbox.velocity}
+            self.position: {"update": self.gearbox.position, "covariance": 0},
+            self.velocity: {"update": self.gearbox.velocity, "covariance": 0}
         }
 
 
@@ -23,5 +23,5 @@ class Gyro:
 
     def get_sensor_data(self):
         return {
-            self.angle: {"update": self.load.position[2]}
+            self.angle: {"update": self.load.position[2], "covariance": .05}
         }
