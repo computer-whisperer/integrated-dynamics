@@ -60,6 +60,9 @@ class MyRobotDynamics:
         }
         return self.state
 
+    def get_state_derivatives(self):
+        pass
+
 
 dynamics_build_lock = Lock()
 dynamics_object = None

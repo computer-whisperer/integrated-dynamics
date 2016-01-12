@@ -11,7 +11,7 @@ class OneDimensionalLoad:
     """
 
     def __init__(self, components, mass):
-        self.mass = mass
+        self.mass = theano.shared(mass, theano.config.floatX)
         self.velocity = theano.shared(0.0, theano.config.floatX)
         self.position = theano.shared(0.0, theano.config.floatX)
         self.wheels = []

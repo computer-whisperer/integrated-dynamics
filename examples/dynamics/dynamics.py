@@ -12,7 +12,7 @@ class MyRobotDynamics:
         self.lift_motor = dynamics.CIMMotor(self.lift_speed_controller)
         self.lift_gearbox = dynamics.GearBox([self.lift_motor], 20, 0)
         self.lift_encoder = dynamics.Encoder(self.lift_gearbox)
-        self.lift_wheel = dynamics.SimpleWheels(self.lift_gearbox, 3)
+        self.lift_wheel = dynamics.SimpleWheels(self.lift_gearbox, 8)
         self.lift_load = dynamics.OneDimensionalLoad([self.lift_wheel], 60/32)
         self.lift_integrator = dynamics.Integrator()
         self.lift_integrator.add_ode_update(self.lift_load.get_state_derivatives())

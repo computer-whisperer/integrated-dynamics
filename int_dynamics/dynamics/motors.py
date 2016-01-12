@@ -28,6 +28,11 @@ class CIMMotor(Motor):
         Motor.__init__(self, power_supply, 7.37, .149)
 
 
+class MiniCIMMotor(Motor):
+    def __init__(self, power_supply):
+        Motor.__init__(self, power_supply, 8.61, .086)
+
+
 class DualCIMMotor(Motor):
     def __init__(self, power_supply):
         Motor.__init__(self, power_supply, 7.37, .298)
