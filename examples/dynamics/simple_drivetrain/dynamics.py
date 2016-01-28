@@ -48,8 +48,8 @@ class MyRobotDynamics:
         self.drivetrain.set_values(self.controls["left_drive_cim"],
                                    self.controls["right_drive_cim"])
 
-    def update_physics(self, dt, do_ekf=False):
-        self.drivetrain.update_physics(dt, do_ekf)
+    def update_physics(self, dt):
+        self.drivetrain.update_physics(dt)
 
     def get_state(self):
         self.state = {
@@ -57,18 +57,15 @@ class MyRobotDynamics:
         }
         return self.state
 
-    def set_vector_state(self, x):
-        self
-
-    def set_vector_controls(self, u):
-        self.drivetrain.set_values(u[0], u[1])
-
-    def get_vector_data(self):
-        state_derivatives = self.drivetrain.get_state_derivatives()
-        states = self.drivetrain.get_state()
-        control_derivatives = self.drivetrain.drivetrain_integrator.control_derivative.get_value()
-        return states, state_derivatives, control_derivatives
+    def get_state_derivatives(self):
+        self.drivetrain.get_state_derivatives()
 
 
+dynamics_build_lock = Lock()
+dynamics_object = None
 def get_dynamics():
+    #global dynamics_object
+    #with dynamics_build_lock:
+        #if dynamics_object is None:
+        #    dynamics_object = MyRobotDynamics()
     return MyRobotDynamics()

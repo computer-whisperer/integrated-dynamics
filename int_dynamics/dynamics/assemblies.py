@@ -50,11 +50,13 @@ class KOPAssembly:
                 self.left_encoder.get_sensor_data(),
                 self.right_encoder.get_sensor_data()
             ])
-            self.update_ekf_physics = self.drivetrain_integrator.ekf_physics_update
 
     def set_values(self, left_value, right_value):
         self.left_speed_controller.set_value(left_value)
         self.right_speed_controller.set_value(right_value)
+
+    def get_state_derivatives(self):
+        return self.drivetrain_integrator.state_derivative.get_value()
 
     def get_state(self):
         return {

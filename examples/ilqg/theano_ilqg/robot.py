@@ -1,12 +1,6 @@
 import wpilib
-from matplotlib import use
 from numpy import *
 from robotpy_ext.physics import drivetrains
-#use("tkagg")
-from matplotlib import cm
-from matplotlib.ticker import LinearLocator, FormatStrFormatter
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
 from int_dynamics.scipy_ilqg import ilqg
 import time
 
@@ -56,39 +50,6 @@ def cost_func(x, u):
 def sabs(x, p):
     # smooth absolute-value function (a.k.a pseudo-Huber)
     return sqrt(x*x + p*p) - p
-
-
-def cost_graph(path):
-    global ax
-    #plt.ion()
-    fig = plt.figure()
-    ax = fig.gca()
-
-    X = arange(-10, 30, 0.25)
-    Y = arange(-5, 25, 0.25)
-
-    X, Y = meshgrid(X, Y)
-    Z = zeros(X.shape)
-    for x in range(X.shape[0]):
-        for y in range(X.shape[1]):
-            Z[x, y] = .2*(cost_func(array([X[x, y], Y[x, y], 0]), array([0, 0])))
-
-    surf = ax.plot_surface(X, Y, rstride=1, cstride=1, cmap=cm.coolwarm,
-                           linewidth=0, antialiased=False)
-    #ax.set_zlim(-1.01, 1.01)
-
-    ax.zaxis.set_major_locator(LinearLocator(10))
-    ax.zaxis.set_major_formatter(FormatStrFormatter('%.02f'))
-
-    fig.colorbar(surf, shrink=0.5, aspect=5)
-
-    path_z = ones(path.shape[0])
-    for i in range(path.shape[0]):
-        path_z[i] = .2*(.05+cost_func(array([path[i, 0], path[i, 1], 0]), array([0, 0])))
-
-    path_line = ax.plot(path[:, 0], path[:, 1])
-
-    plt.show()
 
 
 path_line = None

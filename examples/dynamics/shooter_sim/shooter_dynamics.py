@@ -6,10 +6,10 @@ class MyRobotDynamics:
     def __init__(self):
 
         self.shooter_speed_controller = dynamics.SpeedController()
-        self.shooter_motors = [dynamics.MiniCIMMotor(self.shooter_speed_controller) for _ in range(0, 1)]
+        self.shooter_motors = [dynamics.ThrottleMotor(self.shooter_speed_controller) for _ in range(0, 2)]
         self.shooter_gearbox = dynamics.GearBox(self.shooter_motors, 2, 0)
         self.shooter_wheel = dynamics.SimpleWheels(self.shooter_gearbox, 8)
-        self.shooter_load = dynamics.OneDimensionalLoad([self.shooter_wheel], 3/32)
+        self.shooter_load = dynamics.OneDimensionalLoad([self.shooter_wheel], 5/32)
         self.shooter_integrator = dynamics.Integrator()
         self.shooter_integrator.add_ode_update(self.shooter_load.get_state_derivatives())
 

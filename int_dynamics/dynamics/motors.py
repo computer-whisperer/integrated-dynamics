@@ -36,3 +36,13 @@ class MiniCIMMotor(Motor):
 class DualCIMMotor(Motor):
     def __init__(self, power_supply):
         Motor.__init__(self, power_supply, 7.37, .298)
+
+
+class BAGMotor(Motor):
+    def __init__(self, power_supply):
+        Motor.__init__(self, power_supply, 19.4, .0243)
+
+
+class ThrottleMotor(Motor):
+    def __init__(self, power_supply):
+        Motor.__init__(self, power_supply, 7.37, .00798)
