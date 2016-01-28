@@ -40,7 +40,7 @@ with open(join(setup_dir, 'README.rst'), 'r') as readme_file:
     long_description = readme_file.read()
 
 setup(
-    name='int_dynamics',
+    name='integrated-dynamics',
     version=__version__,
     description='A versatile dynamics library designed for RobotPy',
     long_description=long_description,
