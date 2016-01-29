@@ -14,7 +14,7 @@ class MyRobotDynamics:
 
     def get_sensors(self, hal_data=None):
         self.sensors = {
-            "gyro": self.drivetrain.gyro.angle.get_value() + np.random.normal(0, .05),
+            "gyro": self.drivetrain.imu.angle.get_value() + np.random.normal(0, .05),
             "left_encoder": self.drivetrain.left_gearbox.position.get_value(),
             "right_encoder": self.drivetrain.right_gearbox.position.get_value()
         }
@@ -56,9 +56,6 @@ class MyRobotDynamics:
             "drivetrain": self.drivetrain.get_state(),
         }
         return self.state
-
-    def set_vector_state(self, x):
-        self
 
     def set_vector_controls(self, u):
         self.drivetrain.set_values(u[0], u[1])

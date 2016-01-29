@@ -1,8 +1,8 @@
 from int_dynamics import dynamics
 import math
 import numpy as np
-from threading import Lock
-from copy import deepcopy
+import os
+
 
 class MyRobotDynamics:
 
@@ -14,18 +14,14 @@ class MyRobotDynamics:
 
     def get_sensors(self, hal_data=None):
         self.sensors = {
-            "gyro": self.drivetrain.gyro.angle.get_value() + np.random.normal(0, .05),
+            "gyro": self.drivetrain.imu.angle.get_value() + np.random.normal(0, .05),
             "left_encoder": self.drivetrain.left_gearbox.position.get_value(),
             "right_encoder": self.drivetrain.right_gearbox.position.get_value()
         }
-        if hal_data is not None:
-            hal_data['analog_in'][0]['accumulator_value'] = math.degrees(self.sensors["gyro"]) / 2.7901785714285715e-12
-            hal_data['encoder'][0]['count'] = math.degrees(self.sensors["left_encoder"])
-            hal_data['encoder'][1]['count'] = math.degrees(self.sensors["right_encoder"])
         return self.sensors
 
     def update_sensors(self):
-        self.drivetrain.gyro.angle.set_value(self.sensors["gyro"])
+        self.drivetrain.imu.angle.set_value(self.sensors["gyro"])
         self.drivetrain.left_encoder.position.set_value(self.sensors["left_encoder"])
         self.drivetrain.right_encoder.position.set_value(self.sensors["right_encoder"])
 
@@ -61,11 +57,5 @@ class MyRobotDynamics:
         self.drivetrain.get_state_derivatives()
 
 
-dynamics_build_lock = Lock()
-dynamics_object = None
 def get_dynamics():
-    #global dynamics_object
-    #with dynamics_build_lock:
-        #if dynamics_object is None:
-        #    dynamics_object = MyRobotDynamics()
-    return MyRobotDynamics()
+    return dynamics.utilities.cache_object(MyRobotDynamics, file_path=os.path.abspath(__file__))

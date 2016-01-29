@@ -1,7 +1,4 @@
 class BasePhysicsEngine(object):
-    '''
-       Simulates a 4-wheel mecanum robot using Tank Drive joystick control
-    '''
 
     def __init__(self, physics_controller):
         '''
@@ -26,11 +23,11 @@ class BasePhysicsEngine(object):
                             time that this function was called
         '''
 
-        self.dynamics.update_controls(hal_data)
+        #self.dynamics.update_controls(hal_data, add_noise=True)
         self.dynamics.update_physics(tm_diff)
-        self.dynamics.get_sensors(hal_data)
+        self.dynamics.get_sensors(hal_data, add_noise=True)
         state = self.dynamics.get_state()
-
+        print(state)
         # For some reason pyfrc's x and y are flopped
         self.physics_controller.y = state["drivetrain"]["position"][0]
         self.physics_controller.x = state["drivetrain"]["position"][1]

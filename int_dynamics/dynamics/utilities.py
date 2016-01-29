@@ -2,6 +2,13 @@ import math
 import numpy as np
 import theano
 from theano import tensor as T
+from threading import Lock
+from int_dynamics.version import __version__
+from os.path import join, exists, dirname
+from os import makedirs
+import pickle
+import hashlib
+import sys
 
 
 def ensure_column(tensor):
@@ -65,3 +72,32 @@ def rot_matrix(theta):
         [0, 0, 1]
     ])
     return tensor
+
+build_lock = Lock()
+
+
+def cache_object(object_class, file_path, pickle_dir="pickle_cache"):
+    sys.setrecursionlimit(10000)
+    with open(file_path, 'rb') as f:
+        m = hashlib.md5()
+        while True:
+            data = f.read(8192)
+            if not data:
+                break
+            m.update(data)
+        file_hash = m.hexdigest()
+    with build_lock:
+        cache_fname = "cached_object--integrated_dynamics-{}--file_hash-{}.pickle".format(__version__, file_hash)
+        cache_dir = join(dirname(file_path), pickle_dir)
+        if not exists(cache_dir):
+            makedirs(cache_dir)
+        cache_path = join(cache_dir, cache_fname)
+        if exists(cache_path):
+            print("Loading pickled object {}".format(cache_fname))
+            obj = pickle.load(open(cache_path, 'rb'))
+        else:
+            obj = object_class()
+            with open(cache_path, 'wb') as f:
+                pickle.dump(obj, f, -1)
+    return obj
+

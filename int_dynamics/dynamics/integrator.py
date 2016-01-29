@@ -7,13 +7,19 @@ from theano import ifelse
 from theano.printing import Print
 from theano.tensor import slinalg
 from . import utilities
+import logging
+
+
+logger = logging.getLogger("dynamics")
 
 
 class Integrator:
 
     def __init__(self):
-        self.updates = []
-        self.ekf_updates = []
+        self.ode_update = None
+        self.sensor_update = None
+        self.ekf_update = None
+
         self.state_list = []
         self.state_vector = None
         self.state_vector_shared = theano.shared(np.array([0.0]), theano.config.floatX)
@@ -27,7 +33,8 @@ class Integrator:
     def add_control_tensor(self, tensor):
         self.control_list.append(tensor)
 
-    def add_ode_update(self, state_derivatives):
+    def build_ode_update(self, state_derivatives):
+        logger.info("Building dynamics ode update, this may take a while.")
         # Trim away any states that are not shared variables
 
         trimmed_state_derivatives = {}
@@ -71,9 +78,10 @@ class Integrator:
 
         new_state = (T.dot(slinalg.expm(A*self.dt), self.state_vector) + T.dot(integral, b)).flatten()
 
-        self.updates.append(self.build_updater(new_state))
+        self.ode_update = self.build_updater(new_state)
 
-    def build_ekf_updater(self, sensor_data):
+    def build_ekf_update(self, sensor_data):
+        logger.info("Building dynamics ekf update.")
         if not isinstance(sensor_data, list):
             sensor_data = [sensor_data]
         sensor_states_blocks = []
@@ -101,19 +109,20 @@ class Integrator:
         kalman_denominator = T.dot(sensor_update_derivative, T.dot(covarience_prediction, sensor_update_derivative.T)) + sensor_error
         kalman_numerator = T.dot(covarience_prediction, sensor_update_derivative.T)
         kalman = T.dot(kalman_numerator, T.inv(kalman_denominator))
-        new_state = self.state_vector + T.dot(kalman, sensor_state - sensor_update)
+        new_state = (self.state_vector + T.dot(kalman, sensor_state - sensor_update)).flatten()
         new_covariance = T.dot(T.identity_like(self.state_covariance) - T.dot(kalman, sensor_update_derivative), covarience_prediction)
 
-        self.ekf_updates.append(self.build_updater(new_state, extra_updates=[(self.state_covariance, new_covariance)]))
+        self.ekf_update = self.build_updater(new_state, extra_updates=[(self.state_covariance, new_covariance)])
 
-    def add_sensor_update(self, sensor_data):
+    def build_sensor_update(self, sensor_data):
+        logger.info("Building dynamics sensor update")
         if not isinstance(sensor_data, list):
             sensor_data = [sensor_data]
         updates = []
         for sensor in sensor_data:
             for state in sensor:
                 updates.append((state, sensor[state]["update"]))
-        self.updates.append(theano.function([], [], updates=updates))
+        self.sensor_update = theano.function([], [], updates=updates)
 
     def build_updater(self, new_state_in, extra_updates=[]):
         new_state, state_derivative = utilities.get_list_derivative(new_state_in, self.state_list)
@@ -135,11 +144,12 @@ class Integrator:
             index += state_len
         return theano.function([], [], updates=updates)
 
-    def update_physics(self, dt=None, do_ekf=False):
+    def update_physics(self, dt=None, sensor_update=False, ekf_update=False):
         if dt is not None:
             self.dt.set_value(dt)
-        for update in self.updates:
-            update()
-        if do_ekf:
-            for update in self.ekf_updates:
-                update()
+        if self.ode_update is not None:
+            self.ode_update()
+        if self.sensor_update is not None and sensor_update:
+            self.sensor_update()
+        if self.ekf_update is not None and ekf_update:
+            self.ekf_update()

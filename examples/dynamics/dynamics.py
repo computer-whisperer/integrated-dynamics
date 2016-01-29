@@ -15,13 +15,13 @@ class MyRobotDynamics:
         self.lift_wheel = dynamics.SimpleWheels(self.lift_gearbox, 8)
         self.lift_load = dynamics.OneDimensionalLoad([self.lift_wheel], 60/32)
         self.lift_integrator = dynamics.Integrator()
-        self.lift_integrator.add_ode_update(self.lift_load.get_state_derivatives())
-        self.lift_integrator.add_sensor_update(self.lift_encoder.get_sensor_data())
+        self.lift_integrator.build_ode_update(self.lift_load.get_state_derivatives())
+        self.lift_integrator.build_sensor_update(self.lift_encoder.get_sensor_data())
 
         self.get_state()
 
     def update_sensors(self):
-        self.drivetrain.gyro.angle.set_value(self.sensors["gyro"])
+        self.drivetrain.imu.angle.set_value(self.sensors["gyro"])
         self.drivetrain.left_encoder.angle.set_value(self.sensors["left_encoder"])
         self.drivetrain.right_encoder.angle.set_value(self.sensors["right_encoder"])
 
@@ -41,7 +41,7 @@ class MyRobotDynamics:
 
     def get_sensors(self, hal_data=None):
         self.sensors = {
-            "gyro": self.drivetrain.gyro.angle.get_value() + np.random.normal(0, .05),
+            "gyro": self.drivetrain.imu.angle.get_value() + np.random.normal(0, .05),
             "left_encoder": self.drivetrain.left_gearbox.position.get_value(),
             "right_encoder": self.drivetrain.right_gearbox.position.get_value()
         }
@@ -53,10 +53,6 @@ class MyRobotDynamics:
     def get_state(self):
         self.state = {
             "drivetrain": self.drivetrain.get_state(),
-            "lift": {
-                "position": self.lift_load.position.get_value(),
-                "velocity": self.lift_load.velocity.get_value()
-            }
         }
         return self.state
 

@@ -1,8 +1,13 @@
 import time
-from shooter_dynamics import get_dynamics
+from dynamics import get_dynamics
 
 start_time = time.time()
 robot_dynamics_1 = get_dynamics()
+robot_dynamics_1.controls = {
+    "left_drive_cim": 1,
+    "right_drive_cim": -1
+}
+robot_dynamics_1.update_controls()
 print("going\n")
 execute_start = time.time()
 iterations = 20

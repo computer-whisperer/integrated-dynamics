@@ -25,3 +25,18 @@ class Gyro:
         return {
             self.angle: {"update": self.load.position[2], "covariance": .05}
         }
+
+
+class NavX:
+    def __init__(self, twodimensionalload):
+        self.load = twodimensionalload
+        self.angle = theano.shared(0.0, theano.config.floatX)
+        self.accel_x = theano.shared(0.0, theano.config.floatX)
+        self.accel_y = theano.shared(0.0, theano.config.floatX)
+
+    def get_sensor_data(self):
+        return {
+            self.angle: {"update": self.load.position[2], "covariance": .05},
+            self.accel_x: {"update": self.load.local_accel[0], "covariance": .05},
+            self.accel_y: {"update": self.load.local_accel[1], "covariance": .05}
+        }

@@ -1,5 +1,5 @@
 import time
-from shooter_dynamics import get_dynamics
+from dynamics import get_dynamics
 
 start_time = time.time()
 robot_dynamics_1 = get_dynamics()
@@ -8,11 +8,6 @@ execute_start = time.time()
 iterations = 20
 for t in range(iterations):
     robot_dynamics_1.update_physics(.05)
-    print(robot_dynamics_1.get_state())
-print("\n Adding Ball! \n")
-robot_dynamics_1.add_ball()
-for t in range(iterations):
-    robot_dynamics_1.update_physics(.001)
     print(robot_dynamics_1.get_state())
 print("\nCompilation took {} seconds.".format(execute_start-start_time))
 execute_time = time.time() - execute_start

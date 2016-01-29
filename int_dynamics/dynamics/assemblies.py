@@ -7,7 +7,7 @@ class KOPAssembly:
     A simple, no-frills KOP drivetrain assembly. 6wd tank with one cim and toughbox per side.
     """
 
-    def __init__(self, bot_weight=120, simple_wheels=False, calc_ekf=False):
+    def __init__(self, bot_weight=120, simple_wheels=False, imu_class=sensors.Gyro, build_ekf=False):
         """
         :param bot_weight: (optional) weight of robot in pounds.
         """
@@ -33,20 +33,20 @@ class KOPAssembly:
         self.drivetrain_load.add_wheel(self.left_wheels, x_origin=-.5)
         self.drivetrain_load.add_wheel(self.right_wheels, x_origin=.5, r_origin=math.pi)
 
-        self.gyro = sensors.Gyro(self.drivetrain_load)
+        self.imu = imu_class(self.drivetrain_load)
 
         self.drivetrain_integrator = integrator.Integrator()
-        self.drivetrain_integrator.add_ode_update(self.drivetrain_load.get_state_derivatives())
-        self.drivetrain_integrator.add_sensor_update([
+        self.drivetrain_integrator.build_ode_update(self.drivetrain_load.get_state_derivatives())
+        self.drivetrain_integrator.build_sensor_update([
             self.left_encoder.get_sensor_data(),
             self.right_encoder.get_sensor_data(),
-            self.gyro.get_sensor_data()
+            self.imu.get_sensor_data()
         ])
 
         self.update_physics = self.drivetrain_integrator.update_physics
-        if calc_ekf:
-            self.drivetrain_integrator.build_ekf_updater([
-                self.gyro.get_sensor_data(),
+        if build_ekf:
+            self.drivetrain_integrator.build_ekf_update([
+                self.imu.get_sensor_data(),
                 self.left_encoder.get_sensor_data(),
                 self.right_encoder.get_sensor_data()
             ])

@@ -34,6 +34,7 @@ class OneDimensionalLoad:
             wheel["wheel"].velocity = np.array([0, 1]) * self.velocity * caster
             state_derivatives.update(wheel["wheel"].get_state_derivatives(self.mass))
             state_derivatives[self.velocity] += state_derivatives[wheel["wheel"].velocity][1] * caster
+        self.local_accel = state_derivatives[self.velocity]
         return state_derivatives
 
 
@@ -87,5 +88,6 @@ class TwoDimensionalLoad:
             state_derivatives.update(wheel["wheel"].get_state_derivatives(self.mass))
             robot_acceleration.append(T.dot(state_derivatives[wheel["wheel"].velocity], wheel_to_bot))
         total_acc = T.sum(robot_acceleration, axis=0)
+        self.local_accel = total_acc
         state_derivatives[self.velocity] = T.dot(total_acc, bot_to_world)
         return state_derivatives

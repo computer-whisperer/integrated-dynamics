@@ -11,7 +11,7 @@ class MyRobotDynamics:
         self.shooter_wheel = dynamics.SimpleWheels(self.shooter_gearbox, 8)
         self.shooter_load = dynamics.OneDimensionalLoad([self.shooter_wheel], 5/32)
         self.shooter_integrator = dynamics.Integrator()
-        self.shooter_integrator.add_ode_update(self.shooter_load.get_state_derivatives())
+        self.shooter_integrator.build_ode_update(self.shooter_load.get_state_derivatives())
 
         self.get_state()
 
