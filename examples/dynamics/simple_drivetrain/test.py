@@ -7,7 +7,7 @@ robot_dynamics_1.controls = {
     "left_drive_cim": 1,
     "right_drive_cim": -1
 }
-robot_dynamics_1.update_controls()
+#robot_dynamics_1.update_controls()
 print("going\n")
 execute_start = time.time()
 iterations = 20

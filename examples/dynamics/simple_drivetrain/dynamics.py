@@ -1,4 +1,4 @@
-from int_dynamics import dynamics
+from int_dynamics import dynamics, utilities
 import math
 import numpy as np
 import os
@@ -21,9 +21,9 @@ class MyRobotDynamics:
         return self.sensors
 
     def update_sensors(self):
-        self.drivetrain.imu.angle.set_value(self.sensors["gyro"])
-        self.drivetrain.left_encoder.position.set_value(self.sensors["left_encoder"])
-        self.drivetrain.right_encoder.position.set_value(self.sensors["right_encoder"])
+        self.drivetrain.imu.angle.set_percent_vbus(self.sensors["gyro"])
+        self.drivetrain.left_encoder.position.set_percent_vbus(self.sensors["left_encoder"])
+        self.drivetrain.right_encoder.position.set_percent_vbus(self.sensors["right_encoder"])
 
     def get_controls(self):
         self.controls = {
@@ -58,4 +58,4 @@ class MyRobotDynamics:
 
 
 def get_dynamics():
-    return dynamics.utilities.cache_object(MyRobotDynamics, file_path=os.path.abspath(__file__))
+    return utilities.cache_object(MyRobotDynamics, file_path=os.path.abspath(__file__))

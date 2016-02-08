@@ -21,9 +21,9 @@ class MyRobotDynamics:
         self.get_state()
 
     def update_sensors(self):
-        self.drivetrain.imu.angle.set_value(self.sensors["gyro"])
-        self.drivetrain.left_encoder.angle.set_value(self.sensors["left_encoder"])
-        self.drivetrain.right_encoder.angle.set_value(self.sensors["right_encoder"])
+        self.drivetrain.imu.angle.set_percent_vbus(self.sensors["gyro"])
+        self.drivetrain.left_encoder.angle.set_percent_vbus(self.sensors["left_encoder"])
+        self.drivetrain.right_encoder.angle.set_percent_vbus(self.sensors["right_encoder"])
 
     def update_controls(self, hal_data=None):
         if hal_data is not None:
@@ -35,7 +35,7 @@ class MyRobotDynamics:
                                    self.controls["right_drive_cim"])
 
     def update_physics(self, dt):
-        self.lift_speed_controller.set_value(1)
+        self.lift_speed_controller.set_percent_vbus(1)
         self.lift_integrator.update_physics(dt)
         self.drivetrain.update_physics(dt)
 

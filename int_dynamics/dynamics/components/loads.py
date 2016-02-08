@@ -1,8 +1,10 @@
 import math
+
 import numpy as np
 import theano
 from theano import tensor as T
-from .utilities import rot_matrix
+
+from int_dynamics.utilities import rot_matrix
 
 
 class OneDimensionalLoad:
@@ -10,8 +12,8 @@ class OneDimensionalLoad:
     Simulates the dynamics of a one-dimensional load provided any number of motive forces.
     """
 
-    def __init__(self, components, mass):
-        self.mass = theano.shared(mass, theano.config.floatX)
+    def __init__(self, components, weight):
+        self.mass = theano.shared(weight/32, theano.config.floatX)
         self.velocity = theano.shared(0.0, theano.config.floatX)
         self.position = theano.shared(0.0, theano.config.floatX)
         self.wheels = []
@@ -37,14 +39,20 @@ class OneDimensionalLoad:
         self.local_accel = state_derivatives[self.velocity]
         return state_derivatives
 
+    def get_state(self):
+        return {
+            "position": self.position.get_value(),
+            "velocity": self.velocity.get_value()
+        }
+
 
 class TwoDimensionalLoad:
     """
     Simulates the dynamics of a load that can move in two dimensions and rotate in its plane provided any number of motive forces.
     """
 
-    def __init__(self, mass):
-        self.mass = mass
+    def __init__(self, weight):
+        self.mass = theano.shared(weight/32, theano.config.floatX)
         self.velocity = theano.shared(np.array([0.0, 0.0, 0.0]), theano.config.floatX)
         self.position = theano.shared(np.array([0.0, 0.0, 0.0]), theano.config.floatX)
         self.wheels = []
@@ -91,3 +99,9 @@ class TwoDimensionalLoad:
         self.local_accel = total_acc
         state_derivatives[self.velocity] = T.dot(total_acc, bot_to_world)
         return state_derivatives
+
+    def get_state(self):
+        return {
+            "position": self.position.get_value(),
+            "velocity": self.velocity.get_value()
+        }

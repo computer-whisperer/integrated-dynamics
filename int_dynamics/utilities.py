@@ -76,7 +76,7 @@ def rot_matrix(theta):
 build_lock = Lock()
 
 
-def cache_object(object_class, file_path, pickle_dir="pickle_cache"):
+def cache_object(object_class, file_path, pickle_dir=".pickle_cache"):
     sys.setrecursionlimit(10000)
     with open(file_path, 'rb') as f:
         m = hashlib.md5()
@@ -97,6 +97,7 @@ def cache_object(object_class, file_path, pickle_dir="pickle_cache"):
             obj = pickle.load(open(cache_path, 'rb'))
         else:
             obj = object_class()
+            print("Pickling {}".format(obj))
             with open(cache_path, 'wb') as f:
                 pickle.dump(obj, f, -1)
     return obj

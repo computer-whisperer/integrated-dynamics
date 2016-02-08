@@ -9,6 +9,8 @@ class GearBox:
     def __init__(self, motors, gear_ratio=10, dynamic_friction=10):
         self.friction = dynamic_friction
         self.gear_ratio = gear_ratio
+        if not isinstance(motors, list):
+            motors = [motors]
         self.motors = motors
         self.position = theano.shared(0.0, theano.config.floatX)
         self.velocity = theano.shared(0.0, theano.config.floatX)
