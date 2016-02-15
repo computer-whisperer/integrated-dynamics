@@ -12,7 +12,7 @@ class MyRobot(wpilib.SampleRobot):
         while self.isOperatorControl() and self.isEnabled():
             self.robot_drive.arcadeDrive(self.joystick)
 
-            wpilib.Timer.delay(0.03)
+            wpilib.Timer.delay(0.1)
 
 if __name__ == '__main__':
     wpilib.run(MyRobot,

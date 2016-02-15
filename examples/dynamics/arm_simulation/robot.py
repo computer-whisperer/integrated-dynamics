@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import wpilib
-from dynamics import get_dynamics
 
 class MyRobot(wpilib.SampleRobot):
     '''Main robot class'''
@@ -9,7 +8,7 @@ class MyRobot(wpilib.SampleRobot):
         '''Robot-wide initialization code should go here'''
         self.talon = wpilib.CANTalon(0)
         self.talon.changeControlMode(wpilib.CANTalon.ControlMode.Position)
-        self.talon.setPID(1, 0, 10)
+        self.talon.setPID(2, 0, 0)
         self.stick = wpilib.Joystick(0)
 
     def operatorControl(self):

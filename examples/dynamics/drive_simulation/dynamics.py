@@ -1,6 +1,5 @@
-from int_dynamics import dynamics, utilities
+from int_dynamics import dynamics
 import math
-import os
 
 
 class MyRobotDynamics(dynamics.DynamicsEngine):
@@ -8,7 +7,7 @@ class MyRobotDynamics(dynamics.DynamicsEngine):
     def build_loads(self):
         # Setup a simple drivetrain
 
-        # Two CIMs
+        # Two CIM
         left_motor = dynamics.CIMMotor()
         right_motor = dynamics.CIMMotor()
         # Two 10:1 gearboxes
@@ -31,5 +30,5 @@ class MyRobotDynamics(dynamics.DynamicsEngine):
         self.controllers['right_controller'] = dynamics.PWMSpeedController(right_motor, 1)
 
 
-def get_dynamics():
-    return utilities.cache_object(MyRobotDynamics, file_path=os.path.abspath(__file__))
+def get_dynamics(mode):
+    return MyRobotDynamics.cached_init(mode)

@@ -1,15 +1,13 @@
-from int_dynamics import dynamics, utilities
-import os
+from int_dynamics import dynamics
 import math
 
 
 class MyRobotDynamics(dynamics.DynamicsEngine):
-    PREDICTION = True
 
     def build_loads(self):
         # Init drivetrain components (the assembly does this for us)
 
-        # Two CIMs
+        # Two CIM
         left_motor = dynamics.CIMMotor()
         right_motor = dynamics.CIMMotor()
         # Two 10:1 gearboxes
@@ -31,7 +29,3 @@ class MyRobotDynamics(dynamics.DynamicsEngine):
         # Set drivetrain controllers
         self.controllers['left_drive'] = dynamics.PWMSpeedController(left_motor, 0)
         self.controllers['right_drive'] = dynamics.PWMSpeedController(right_motor, 1)
-
-
-def get_dynamics():
-    return utilities.cache_object(MyRobotDynamics, file_path=os.path.abspath(__file__))

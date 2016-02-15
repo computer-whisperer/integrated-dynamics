@@ -1,7 +1,7 @@
-from dynamics import get_dynamics
+from dynamics import MyRobotDynamics
 import logging
 logging.getLogger().setLevel(logging.DEBUG)
-shooter = get_dynamics()
+shooter = MyRobotDynamics("simulation")
 
 print("\n2 seconds of spinning up. Each frame is half a second.\n")
 

@@ -12,6 +12,7 @@ class SpeedController:
         self.voltage_out = self.percent_vbus*12
         motor.voltage_in = self.voltage_out
         self.noise = noise
+        self.feedback_state_vector = None
         self.device = False
 
     def set_percent_vbus(self, value, add_noise=False):
@@ -22,8 +23,8 @@ class SpeedController:
     def set_from_hal_data(self, hal_data, dt, add_noise=False):
         pass
 
-    def set_state_vector(self, state):
-        pass
+    def set_feedback_state_vector(self, state_vector):
+        self.feedback_state_vector = state_vector
 
     def init_device(self):
         pass
@@ -79,58 +80,65 @@ class CANTalonSpeedController(SpeedController):
 
     def add_encoder(self, encoder):
         self.sensor = encoder
-        encoder.set_talon(self, self.can_id)
+        encoder.set_can_id(self.can_id)
 
     def set_from_hal_data(self, hal_data, dt, add_noise=False):
+        if self.can_id not in hal_data['CAN']:
+            return
+        import hal
+        class Handle:
+            id = self.can_id
+        sensor_pos = hal.TalonSRX_GetSensorPosition(Handle())
+        sensor_vel = hal.TalonSRX_GetSensorVelocity(Handle())
         talon = hal_data['CAN'][self.can_id]
         percent_vbus = 0
         if hal_data.get('profile_slot_select', 0) == 0:
-            p_gain = talon['params'][1]
-            i_gain = talon['params'][2]
-            d_gain = talon['params'][3]
-            f_gain = talon['params'][4]
-            izone = talon['params'][5]
-            close_loop_ramp_rate = talon['params'][5]
+            p_gain = talon['profile0_p']
+            i_gain = talon['profile0_i']
+            d_gain = talon['profile0_d']
+            f_gain = talon['profile0_f']
+            izone = talon['profile0_izone']
+            close_loop_ramp_rate = talon['profile0_closeloopramprate']
         else:
-            p_gain = talon['params'][11]
-            i_gain = talon['params'][12]
-            d_gain = talon['params'][13]
-            f_gain = talon['params'][14]
-            izone = talon['params'][15]
-            close_loop_ramp_rate = talon['params'][5]
+            p_gain = talon['profile1_p']
+            i_gain = talon['profile1_i']
+            d_gain = talon['profile1_d']
+            f_gain = talon['profile1_f']
+            izone = talon['profile1_izone']
+            close_loop_ramp_rate = talon['profile1_closeloopramprate']
         if hal_data['control']['enabled']:
             if talon['mode_select'] == 0: # Percent vbus mode
                 percent_vbus = talon['value']
             elif talon['mode_select'] == 1: # Position PID mode
-                if 93 not in talon['params']:
-                    talon['params'][93] = 0
-                talon['closeloop_err'] = talon['value'] - talon['sensor_position']
-                talon['params'][93] += dt*talon['closeloop_err']
-                if abs(talon['params'][93]) > izone:
-                    talon['params'][93] = 0
+                if 'pid_iaccum' not in talon:
+                    talon['pid_iaccum'] = 0
+                talon['closeloop_err'] = talon['value'] - sensor_pos
+                talon['pid_iaccum'] += dt*talon['closeloop_err']
+                if izone != 0 and abs(talon['pid_iaccum']) > izone:
+                    talon['pid_iaccum'] = 0
                 output = p_gain*talon['closeloop_err']\
-                         + i_gain*talon['params'][93]\
-                         - d_gain*talon['sensor_velocity'] \
+                         + i_gain*talon['pid_iaccum']\
+                         - d_gain*sensor_vel \
                          + f_gain*talon['value']
                 # Output is -1023 to 1023
                 percent_vbus = output/1023
             elif talon['mode_select'] == 2:
-                if 93 not in talon['params']:
-                    talon['params'][93] = 0
-                talon['closeloop_err'] = talon['value'] - talon['sensor_velocity']
-                talon['params'][93] += dt*talon['closeloop_err']
-                if abs(talon['params'][93]) > izone:
-                    talon['params'][93] = 0
+                if 'pid_accum' not in talon:
+                    talon['pid_iaccum'] = 0
+                talon['closeloop_err'] = talon['value'] - sensor_vel
+                talon['pid_iaccum'] += dt*talon['closeloop_err']
+                if izone != 0 and abs(['pid_iaccum']) > izone:
+                    talon['pid_iaccum'] = 0
                 output = p_gain*talon['closeloop_err']\
-                         + i_gain*talon['params'][93]\
-                         - d_gain*(talon['sensor_velocity'] - self.last_vel)/dt \
+                         + i_gain*talon['pid_iaccum']\
+                         - d_gain*(sensor_vel - self.last_vel)/dt \
                          + f_gain*talon['value']
                 # Output is -1023 to 1023
                 percent_vbus = output/1023
             elif talon['mode_select'] == 4:
                 percent_vbus = talon['value']/12
         self.set_percent_vbus(percent_vbus, add_noise)
-        self.last_vel = talon['sensor_velocity']
+        self.last_vel = sensor_vel
 
     def init_device(self):
         import wpilib

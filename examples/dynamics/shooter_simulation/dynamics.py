@@ -22,6 +22,4 @@ class MyRobotDynamics(dynamics.DynamicsEngine):
         self.shooter_load.velocity.set_value(ball_plus_wheel_speed)
         self.shooter_load.position.set_value(0)
 
-def get_dynamics():
-    return MyRobotDynamics()
 

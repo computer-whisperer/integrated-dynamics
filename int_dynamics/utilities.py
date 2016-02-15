@@ -76,7 +76,28 @@ def rot_matrix(theta):
 build_lock = Lock()
 
 
-def cache_object(object_class, file_path, pickle_dir=".pickle_cache"):
+def get_covariance_matrix_from_object_dict(mean_vector, object_dict, extra_sources=None):
+    source_derivatives = {}
+    for key in object_dict:
+        variance_data = object_dict[key].get_variance_sources()
+        for variance_source in variance_data:
+            _, variance_derivative = theano.gradient.jacobian(mean_vector, variance_source, disconnected_inputs='ignore')
+            source_derivatives[variance_derivative] = variance_data[variance_source]
+    if extra_sources is not None:
+        source_derivatives.update(extra_sources)
+    return get_covariance_matrix(source_derivatives)
+
+
+def get_covariance_matrix(covariance_sources):
+    components = []
+    for covariance_derivative in covariance_sources:
+        p1 = T.dot(covariance_derivative, covariance_sources[covariance_derivative])
+        p2 = T.dot(p1, covariance_derivative.T)
+        components.append(p2)
+    return sum(components)
+
+
+def cache_object(file_path, object_class, *args, pickle_dir=".pickle_cache"):
     sys.setrecursionlimit(10000)
     with open(file_path, 'rb') as f:
         m = hashlib.md5()
@@ -87,7 +108,11 @@ def cache_object(object_class, file_path, pickle_dir=".pickle_cache"):
             m.update(data)
         file_hash = m.hexdigest()
     with build_lock:
-        cache_fname = "cached_object--integrated_dynamics-{}--file_hash-{}.pickle".format(__version__, file_hash)
+        metadata = {
+            "integrated_dynamics": __version__,
+            "args": args
+        }
+        cache_fname = "cached_object--{}--file_hash-{}.pickle".format(metadata, file_hash)
         cache_dir = join(dirname(file_path), pickle_dir)
         if not exists(cache_dir):
             makedirs(cache_dir)
@@ -96,7 +121,7 @@ def cache_object(object_class, file_path, pickle_dir=".pickle_cache"):
             print("Loading pickled object {}".format(cache_fname))
             obj = pickle.load(open(cache_path, 'rb'))
         else:
-            obj = object_class()
+            obj = object_class(*args)
             print("Pickling {}".format(obj))
             with open(cache_path, 'wb') as f:
                 pickle.dump(obj, f, -1)

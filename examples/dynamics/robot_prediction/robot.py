@@ -20,10 +20,8 @@ class MyRobot(wpilib.SampleRobot):
         while self.isOperatorControl() and self.isEnabled():
             x = self.stick.getX()
             y = self.stick.getY()
-            left = y-x
-            right = -(y+x)
-            self.dynamics.controllers["left_drive"].set_percent_vbus(left)
-            self.dynamics.controllers["right_drive"].set_percent_vbus(right)
+            self.dynamics.controllers["left_drive"].set_percent_vbus(y-x)
+            self.dynamics.controllers["right_drive"].set_percent_vbus(-(y+x))
             self.dynamics.prediction_update(0.05)
             wpilib.Timer.delay(0.05)
         print(self.dynamics.get_state())
