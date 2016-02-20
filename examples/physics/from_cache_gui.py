@@ -19,6 +19,13 @@ def main():
 
     integrator.build_simulation_function()
     integrator.build_rendering_function()
+    #integrator.current_state[8] = 0
+    #integrator.current_state[13] = 10000
+    #integrator.current_state[14] = 10000
+    #integrator.current_state[15] = 10000
+    #integrator.current_state[16] = 10000
+
+    print(integrator.current_state)
 
     glutInit(sys.argv)
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
@@ -40,7 +47,7 @@ def main():
     glutDisplayFunc(display)
     glutIdleFunc(display)
     glMatrixMode(GL_PROJECTION)
-    gluPerspective(40.,1.,1.,40.)
+    gluPerspective(40.,1.,1.,100.)
     glMatrixMode(GL_MODELVIEW)
     gluLookAt(0,0,10,
               0,0,0,
@@ -48,15 +55,15 @@ def main():
     glPushMatrix()
     glutMainLoop()
 
-replay = 2
+replay = 1000
 
 def display():
     global last_time
     current_time = time.time()
-    dt = (current_time - last_time)/10
+    dt = (current_time - last_time)
     if integrator.get_time() > replay:
         integrator.reset_simulation()
-    integrator.step_time(min(dt, 0.1))
+    integrator.step_time(0.01)
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
     glPushMatrix()
     color = [1.0,0.,0.,1.]

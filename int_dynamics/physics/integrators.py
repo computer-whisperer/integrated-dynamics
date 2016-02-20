@@ -33,7 +33,6 @@ class EulerIntegrator:
         self.time = 0
 
         self.new_state = None
-        self.new_state_components = []
         self.forward_dynamics_func = None
 
         self.math_library = math_library
@@ -42,6 +41,7 @@ class EulerIntegrator:
         self.edge_matrix = None
         self.edge_matrix_components = None
         self.edge_func = None
+        self.symbol_substitutions = None
 
 
     def init_symbols(self, root_body):
@@ -56,14 +56,17 @@ class EulerIntegrator:
         self.dt_symbol = sympy.symbols("dt")
         substitute_symbols = self.build_state_substitutions()
         self.vertices = root_body.get_edges()
+        self.symbol_substitutions = self.root_body.get_substitutions()
 
     def build_simulation_expressions(self, root_body, root_accel=None, autocache=True):
         self.init_symbols(root_body)
+        component_symbols_gen = sympy.numbered_symbols()
         print("Building crb_C")
         # Compute the forward dynamics problem with the Composite-Rigid-Body algorithm
         # Get C (the force vector required for zero acceleration) from the RNEA inverse dynamics solver
         crb_C = Matrix([self.root_body.get_inverse_dynamics([0 for _ in self.motion_symbols], root_accel)[0]]).T
-#        components, reduced_exprs = sympy.cse(crb_C)
+        #print(crb_C.evalf(subs=self.build_state_substitutions()))
+#        components, reduced_exprs = sympy.cse(crb_C, symbols=component_symbols_gen)
 #        self.new_state_components.extend(components)
 #        crb_C = reduced_exprs[0]
         #print(count_ops(crb_C))
@@ -79,26 +82,31 @@ class EulerIntegrator:
             for x in range(x+1, len(self.motion_symbols)):
                 columns[x][y] = columns[y][x]
         crb_H = Matrix(columns).T
-#        components, reduced_exprs = sympy.cse(crb_H)
-#        self.new_state_components.extend(components)
-#        crb_H = reduced_exprs[0]
-        #print(count_ops(crb_H))
         #print(crb_H.evalf(subs=self.build_state_substitutions()))
+        if True:
+            components, reduced_exprs = sympy.cse(crb_H, symbols=component_symbols_gen, order="none")
+            self.symbol_substitutions.update(components)
+            crb_H = reduced_exprs[0]
         forces = Matrix([self.root_body.get_total_forces()]).T
         print("Begin solve")
         joint_accel = crb_H.LUsolve(forces-crb_C)
-
-        start_time = time.time()
-        print("Begin cse")
-        self.new_state_components, reduced_exprs = sympy.cse(joint_accel, order="none")
-        joint_accel = reduced_exprs[0]
-        print("cse took {} seconds".format(time.time()-start_time))
-        print(count_ops(reduced_exprs[0]))
-        print(len(self.new_state_components))
-
-        joint_dv = joint_accel*self.dt_symbol
-        new_joint_motion = [self.motion_symbols[x] + joint_dv[x, 0] for x in range(len(joint_dv))]
-        print("Begin motion integration")
+        #print(joint_accel.evalf(subs=self.build_state_substitutions()))
+        if True:
+            start_time = time.time()
+            print("Begin cse")
+            components, reduced_exprs = sympy.cse(joint_accel, symbols=component_symbols_gen, order="none")
+            self.symbol_substitutions.update(dict(components))
+            joint_accel = reduced_exprs[0]
+            print("cse took {} seconds".format(time.time()-start_time))
+        print("symbol break")
+        joint_accel_list = []
+        for i in range(len(self.motion_symbols)):
+            value = joint_accel[i, 0]
+            new_symbol = next(component_symbols_gen)
+            self.symbol_substitutions[new_symbol] = value
+            joint_accel_list.append(new_symbol)
+        print("Begin integration")
+        new_joint_motion = [self.motion_symbols[i] + joint_accel_list[i]*self.dt_symbol for i in range(len(self.motion_symbols))]
         new_joint_pose = self.root_body.integrate_motion(new_joint_motion, self.dt_symbol)
         self.new_state = new_joint_pose + new_joint_motion
         self.new_state = Matrix([self.new_state])
@@ -106,8 +114,9 @@ class EulerIntegrator:
 
         print("Building vertex expressions")
         edge_matrix = Matrix([vert_1.get_values('bcd') + vert_2.get_values('bcd') for vert_1, vert_2 in self.vertices])
-        self.edge_matrix_components, reduced_exprs = sympy.cse(edge_matrix, order='none')
+        components, reduced_exprs = sympy.cse(edge_matrix, symbols=component_symbols_gen, order='none')
         self.edge_matrix = reduced_exprs[0]
+        self.symbol_substitutions.update(dict(components))
 
         if autocache:
             self.cache_integrator("{}.pkl".format(self.name))
@@ -116,7 +125,7 @@ class EulerIntegrator:
     def build_simulation_function(self):
         self.forward_dynamics_func = build_function(
             self.new_state,
-            self.new_state_components,
+            self.symbol_substitutions,
             self.state_symbols + [self.dt_symbol],
             self.math_library
         )
@@ -124,7 +133,7 @@ class EulerIntegrator:
     def build_rendering_function(self):
         self.edge_func = build_function(
             self.edge_matrix,
-            self.edge_matrix_components,
+            self.symbol_substitutions,
             self.state_symbols + [self.dt_symbol],
             self.math_library
         )

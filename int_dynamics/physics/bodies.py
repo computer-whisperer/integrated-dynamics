@@ -28,7 +28,7 @@ class Body:
         Each joint has four frames associated with it: parent body, joint base, joint end, and child body
 
         :param body: The body instance to add.
-        :param pose: The pose of the child relative to the joint.
+        :param body_pose: The pose of the child relative to the joint.
         :param joint_base: The pose of the joint base in local frame coordinates.(optional)
         :param joint_pose: The initial pose of the joint, with variables corresponding to degrees of freedom (optional).
         :param joint_motion: The initial motion of this joint, with variables corresponding to degrees of freedom (optional).
@@ -42,6 +42,7 @@ class Body:
             joint_pose = PoseVector()
         if joint_motion is None:
             joint_motion = MotionVector()
+
 
         joint_pose.init_symbols(body.name+"_joint_pose")
         joint_motion.init_symbols(body.name+"_joint_motion")
@@ -171,7 +172,7 @@ class Body:
                     child["body"].world_inertia.dot(child["body"].frame.root_motion)
                 )
 
-            # Recurse to find any force acting on the child from it's children, and use it to calculate the force on
+            # Recurse to find any force acting on the child from its children, and use it to calculate the force on
             # the joint in question in world coordinates.
             child_recurse_vars, accel_values = split_list(accel_values, [len(child["body"].get_motion_symbol_components())])
             child_force_values, child_joint_forces = child["body"].get_inverse_dynamics(child_recurse_vars, child_world_accel)
@@ -246,8 +247,17 @@ class Body:
             pose_values.extend(child["body"].integrate_motion(child_motion_symbol_values, dt))
         return pose_values
 
-    def get_vertices(self):
+    def get_edges(self):
         raise NotImplementedError()
+
+    def get_substitutions(self):
+        substitutions = {}
+        for child in self.children:
+            substitutions.update(child["body"].get_substitutions())
+            substitutions.update(child["joint_frame_base"].get_substitutions())
+            substitutions.update(child["joint_frame_end"].get_substitutions())
+            substitutions.update(child["body"].frame.get_substitutions())
+        return substitutions
 
 
 class WorldBody(Body):
@@ -261,15 +271,13 @@ class WorldBody(Body):
         self.frame.root_motion = MotionVector(frame=self.frame)
 
     def get_rigid_body_inertia(self):
-        return InertiaMoment(sympy.eye(3), XYZVector(), 0, self.frame)
+        return InertiaMoment.from_comps(sympy.eye(3), XYZVector(), 0, self.frame)
 
     def get_edges(self):
         vertices = []
         for child in self.children:
             vertices.extend(child["body"].get_edges())
         return vertices
-
-
 
 
 class CubeBody(Body):
@@ -286,7 +294,7 @@ class CubeBody(Body):
         y_sq = self.y_dim**2
         z_sq = self.z_dim**2
         components = 1/12 * self.body_mass * XYZVector(y_sq + z_sq, x_sq + z_sq, x_sq + y_sq)
-        return InertiaMoment(sympy.diag(components.b, components.c, components.d), XYZVector(), self.body_mass, self.frame)
+        return InertiaMoment.from_comps(sympy.diag(components.b, components.c, components.d), XYZVector(), self.body_mass, self.frame)
 
     def get_edges(self):
         root_pose = self.frame.root_pose

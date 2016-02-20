@@ -63,6 +63,26 @@ def test_pose_vector_transform_motion():
     assert_almost_equal(m22.get_ndarray(), np.array([0, 0, 0, 100, 0, 0, 1, 0]))
 
 
+def test_pose_vector_transform_force():
+    f1 = Frame("f1")
+    f2 = Frame("f2")
+    f3 = Frame("f3")
+    p1 = PoseVector(XYZVector(0, 1, 0), Versor(XYZVector(0, 1, 0), math.pi/4), frame=f1, end_frame=f3)
+    p2 = PoseVector(XYZVector(100, 0, 0), frame=f2, end_frame=f3)
+
+    m1 = ForceVector(XYZVector(10, 0, 0), frame=f3)
+    m11 = p1.transform_force(m1)
+    assert_almost_equal(m11.get_ndarray(), np.array([0, 7.0710678, 0, -7.0710678, 0, 0, 0, 0]))
+    m12 = p2.transform_force(m1)
+    assert_almost_equal(m12.get_ndarray(), np.array([0, 10, 0, 0, 0, 0, 0, 0]))
+
+    m2 = ForceVector(angular_component=XYZVector(0, 1, 0), frame=f3)
+    m21 = p1.transform_force(m2)
+    assert_almost_equal(m21.get_ndarray(), np.array([0, 0, 0, 0, 0, 0, 1, 0]))
+    m22 = p2.transform_force(m2)
+    assert_almost_equal(m22.get_ndarray(), np.array([0, 0, 0, 100, 0, 0, 1, 0]))
+
+
 def test_pose_vector_inverse():
     f1 = Frame("f1")
     f2 = Frame("f2")
@@ -81,7 +101,7 @@ def test_pose_vector_inverse():
 
 def test_inertia_moment():
     frame = Frame(name="test")
-    i1 = InertiaMoment(sympy.diag(1, 1, 1), XYZVector(), 1, frame)
+    i1 = InertiaMoment.from_comps(sympy.diag(1, 1, 1), XYZVector(), 1, frame)
     force = i1.dot(MotionVector(XYZVector(0, 0, 1), frame=frame))
     force_ndarray = force.get_ndarray()
     assert_almost_equal(force_ndarray, np.array([0, 0, 0, 1, 0, 0, 0, 0]))
@@ -90,7 +110,7 @@ def test_inertia_moment():
     i2 = p1.transform_inertia(i1)
     force = i2.dot(MotionVector(XYZVector(0, 0, 1), frame=frame2))
     force_ndarray = force.get_ndarray()
-    assert_almost_equal(force_ndarray, np.array([0, 0, 0, 1, 0, 0, -1, 0]))
+    assert_almost_equal(force_ndarray, np.array([0, 0, 0, 1, 0, 0, 1, 0]))
 
 
 def test_inertia_moment_transforms():
@@ -99,7 +119,7 @@ def test_inertia_moment_transforms():
     root_frame = Frame(name="root")
     local_frame = Frame(name="local")
     p1 = PoseVector(XYZVector(10, 0, 0), Versor(XYZVector(0, 1, 0), math.pi/4), frame=root_frame, end_frame=local_frame)
-    i1 = InertiaMoment(sympy.diag(5, 5, 25), XYZVector(), 1, local_frame)
+    i1 = InertiaMoment.from_comps(sympy.diag(5, 5, 25), XYZVector(), 1, local_frame)
     local_accel = MotionVector(XYZVector(0, 0, 0), XYZVector(0, 0, 1), frame=local_frame)
     print("local accel: {}".format(local_accel.get_ndarray()))
     local_force_1 = i1.dot(local_accel)

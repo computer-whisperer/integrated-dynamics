@@ -1,5 +1,5 @@
 import sympy
-from sympy.matrices import Matrix
+from sympy.matrices import Matrix, eye, zeros
 import numpy # Required for workaround https://stackoverflow.com/questions/38040846/error-with-sympy-lambdify-for-piecewise-functions-and-numpy-module
 from . import integrators
 
@@ -8,6 +8,8 @@ class Frame:
     """
     A utility class representing a frame of reference
     """
+    auto_substiute_poses = False
+
     parent_frame = None
 
     relative_pose = None
@@ -17,6 +19,7 @@ class Frame:
         self.name = name
         self.root_pose = root_pose
         self.root_motion = root_motion
+        self.substitutions = {}
 
     def set_parent_frame(self, frame, relative_pose, relative_motion=None):
         self.parent_frame = frame
@@ -27,12 +30,16 @@ class Frame:
         self.relative_pose = relative_pose
         self.relative_motion = relative_motion
         self.root_pose = frame.root_pose.transform_pose(relative_pose)
+        if self.auto_substiute_poses:
+            self.substitutions.update(self.root_pose.symbol_substitute("{}_root_pose".format(self.name)))
         self.root_motion = frame.root_pose.transform_motion(relative_motion) + frame.root_motion
 
     def check_identity(self, other):
         if other is not self:
             raise ValueError("Frame of reference error: frames not equal: {} and {}".format(self.name, other.name))
 
+    def get_substitutions(self):
+        return self.substitutions
 
 class Quaternion:
 
@@ -54,6 +61,16 @@ class Quaternion:
         for val in "abcd":
             if val in components:
                 args.append(matrix[components.index(val), 0])
+            else:
+                args.append(0)
+        return cls(*args)
+
+    @classmethod
+    def from_list(cls, matrix, components="abcd"):
+        args = []
+        for val in "abcd":
+            if val in components:
+                args.append(matrix[components.index(val)])
             else:
                 args.append(0)
         return cls(*args)
@@ -137,6 +154,13 @@ class Quaternion:
             [2*self.b*self.d - 2*self.c*self.a, 2*self.c*self.d + 2*self.b*self.a, 1 - 2*self.b*self.b - 2*self.c*self.c]
         ])
 
+    def to_cross_matrix(self):
+        return Matrix([
+            [0, -self.d, self.c],
+            [self.d, 0, -self.b],
+            [-self.c, self.b, 0]
+        ])
+
     def transpose(self):
         return Quaternion(self.a, -self.b, -self.c, -self.d)
 
@@ -149,6 +173,16 @@ class Quaternion:
     def get_ndarray(self, subs=None):
         import numpy
         return numpy.array(self.as_matrix().evalf(subs=subs)).astype(numpy.float64)[:, 0]
+
+    def symbol_substitute(self, symbol_prefix):
+        substitutions = {}
+        for component in "abcd":
+            value = getattr(self, component)
+            if not sympy.sympify(value).is_constant():
+                sub_symbol = sympy.symbols("_".join([symbol_prefix, component]))
+                setattr(self, component, sub_symbol)
+                substitutions[sub_symbol] = value
+        return substitutions
 
 
 def XYZVector(x=0, y=0, z=0, symbols=False):
@@ -182,6 +216,18 @@ class SpatialVector:
         self.frame = frame
         self.linear_component = linear_component
         self.angular_component = angular_component
+
+    @classmethod
+    def from_matrix(cls, matrix, frame=None):
+        linear_component = Quaternion.from_list(matrix[:3], "bcd")
+        angular_component = Quaternion.from_list(matrix[3:], "bcd")
+        return cls(linear_component, angular_component, frame=frame)
+
+    @classmethod
+    def from_spatial_mat(cls, matrix, frame=None):
+        angular_component = Quaternion.from_list(matrix[:3], "bcd")
+        linear_component = Quaternion.from_list(matrix[3:], "bcd")
+        return cls(linear_component, angular_component, frame=frame)
 
     def init_symbols(self, symbol_prefix=""):
         self.linear_component.init_symbols("_".join([symbol_prefix, "lin"]))
@@ -237,13 +283,23 @@ class SpatialVector:
         self.frame.check_identity(other.frame)
         return self.__class__(self.linear_component-other.linear_component, self.angular_component-other.angular_component, frame=self.frame)
 
+    def symbol_substitute(self, symbol_prefix):
+        substitutions = {}
+        substitutions.update(self.linear_component.symbol_substitute(symbol_prefix + "_lin"))
+        substitutions.update(self.angular_component.symbol_substitute(symbol_prefix + "_ang"))
+        return substitutions
+
     def as_matrix(self):
         return self.linear_component.as_matrix().col_join(self.angular_component.as_matrix())
 
     def get_ndarray(self, subs=None):
         import numpy
-        return numpy.array(self.as_matrix().evalf(subs)).astype(numpy.float64)[:, 0]
+        return numpy.array(self.as_matrix().evalf(subs=subs)).astype(numpy.float64)[:, 0]
 
+    def to_spatial_mat(self):
+        return Matrix([
+            self.angular_component.get_values("bcd") + self.linear_component.get_values("bcd")
+        ]).T
 
 class PoseVector(SpatialVector):
 
@@ -254,6 +310,17 @@ class PoseVector(SpatialVector):
             angular_component = Versor(symbols=variable)
         self.end_frame = end_frame
         SpatialVector.__init__(self, linear_component, angular_component, frame=frame)
+
+        self.transform_matrix = None
+
+    def get_transform_matrix(self):
+        if self.transform_matrix is None:
+            rot_mat = self.angular_component.to_rot_matrix()
+            trans_cross = self.linear_component.to_cross_matrix().T
+            r1 = rot_mat.row_join(zeros(3))
+            r2 = (rot_mat*trans_cross).row_join(rot_mat)
+            self.transform_matrix = r1.col_join(r2)
+        return self.transform_matrix
 
     def transform_vector(self, vector):
         """
@@ -289,17 +356,23 @@ class PoseVector(SpatialVector):
         :return: force in coordinates relative to this pose's root
         """
         self.end_frame.check_identity(force.frame)
-        linear_component = self.angular_component.sandwich_mul(force.linear_component)
-        angular_component = self.angular_component.sandwich_mul(force.angular_component) + \
-            self.linear_component.cross(linear_component)
-        return MotionVector(linear_component, angular_component, frame=self.frame)
+        #linear_component = self.angular_component.sandwich_mul(force.linear_component)
+        #angular_component = self.angular_component.sandwich_mul(force.angular_component) + \
+        #    self.linear_component.cross(linear_component)
+        return ForceVector.from_spatial_mat(
+            self.inverse().get_transform_matrix().T*force.to_spatial_mat(),
+            frame=self.frame
+        )
 
     def transform_inertia(self, inertia):
         self.end_frame.check_identity(inertia.frame)
-        rot_matrix = self.angular_component.to_rot_matrix()
-        result_mat = rot_matrix * inertia.inertia_matrix * rot_matrix.T
-        new_com = self.angular_component.sandwich_mul(inertia.com) + self.linear_component
-        return InertiaMoment(result_mat, new_com, inertia.mass, self.frame)
+        #rot_matrix = self.angular_component.to_rot_matrix()
+        #result_mat = rot_matrix * inertia.inertia_matrix * rot_matrix.T + \
+        #    rot_matrix*self.linear_component.to_cross_matrix().T*inertia.mass*inertia.com.to_cross_matrix().T
+        #new_com = self.angular_component.sandwich_mul(inertia.com) + self.linear_component
+        #return InertiaMoment(result_mat, new_com, inertia.mass, self.frame)
+        trans_mat = self.inverse().get_transform_matrix()
+        return InertiaMoment(trans_mat.T*inertia.matrix*trans_mat, self.frame)
 
     def transpose(self):
         return self.__class__(self.linear_component.transpose(), self.angular_component.transpose(), frame=self.end_frame, end_frame=self.frame)
@@ -357,11 +430,17 @@ class ForceVector(SpatialVector):
 
 class InertiaMoment:
 
-    def __init__(self, inertia_matrix, com, mass, frame):
-        self.inertia_matrix = inertia_matrix
-        self.mass = mass
-        self.com = com
+    def __init__(self, matrix, frame):
+        self.matrix = matrix
         self.frame = frame
+
+    @classmethod
+    def from_comps(cls, inertia_matrix, com, mass, frame):
+        c_tilde = com.to_cross_matrix()
+        r1 = (inertia_matrix - mass*c_tilde*c_tilde).row_join(mass*c_tilde)
+        r2 = (mass*c_tilde.T).row_join(mass*eye(3))
+        matrix = r1.col_join(r2)
+        return cls(matrix, frame)
 
     def dot(self, motion_vector):
         """
@@ -370,26 +449,23 @@ class InertiaMoment:
         :return: force_vector = dot(I, motion_vector)
         """
         self.frame.check_identity(motion_vector.frame)
-        omega_cross = motion_vector.angular_component.cross(self.com)
-        angular_component = Quaternion.from_matrix(self.inertia_matrix * motion_vector.angular_component.as_matrix("bcd"), "bcd") \
-                            + self.com.cross(omega_cross)*self.mass \
-                            + self.com.cross(motion_vector.linear_component)*self.mass
-        linear_component = (motion_vector.linear_component + omega_cross)*self.mass
-        return ForceVector(linear_component, angular_component, frame=self.frame)
+        #angular_component = Quaternion.from_matrix(self.inertia_matrix * motion_vector.angular_component.as_matrix("bcd"), "bcd") \
+        #                    + self.com.cross(motion_vector.linear_component)*self.mass
+        #linear_component = (motion_vector.linear_component + motion_vector.angular_component.cross(self.com))*self.mass
+        result_mat = self.matrix*motion_vector.to_spatial_mat()
+        ang_component = Quaternion(0, result_mat[0, 0], result_mat[1, 0], result_mat[2, 0])
+        lin_component = Quaternion(0, result_mat[3, 0], result_mat[4, 0], result_mat[5, 0])
+        return ForceVector(lin_component, ang_component, frame=self.frame)
 
     def __add__(self, other):
         self.frame.check_identity(other.frame)
-        inertia_matrix = self.inertia_matrix + other.inertia_matrix
-        mass = self.mass + other.mass
-        com = (self.com*self.mass + other.com*other.mass)/mass
-        return InertiaMoment(inertia_matrix, com, mass, self.frame)
+        inertia_matrix = self.matrix + other.matrix
+        return InertiaMoment(inertia_matrix, self.frame)
 
     def __sub__(self, other):
         self.frame.check_identity(other.frame)
-        inertia_matrix = self.inertia_matrix - other.inertia_matrix
-        mass = self.mass - other.mass
-        com = (self.com*self.mass - other.com*other.mass)/mass
-        return InertiaMoment(inertia_matrix, com, mass, self.frame)
+        inertia_matrix = self.matrix - other.matrix
+        return InertiaMoment(inertia_matrix, self.frame)
 
 
 def split_list(list, sizes):
