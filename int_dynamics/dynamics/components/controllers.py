@@ -15,12 +15,10 @@ class SpeedController:
         self.feedback_state_vector = None
         self.device = False
 
-    def set_percent_vbus(self, value, add_noise=False):
-        if add_noise:
-            value += np.random.normal(0, self.noise)
+    def set_percent_vbus(self, value):
         self.percent_vbus.set_value(max(-1, min(1, value)))
 
-    def set_from_hal_data(self, hal_data, dt, add_noise=False):
+    def set_from_hal_data(self, hal_data, dt):
         pass
 
     def set_feedback_state_vector(self, state_vector):
@@ -47,7 +45,7 @@ class PWMSpeedController(SpeedController):
         self.wpilib_type = None
         super().__init__(motor, noise)
 
-    def set_from_hal_data(self, hal_data, dt, add_noise=False):
+    def set_from_hal_data(self, hal_data, dt):
         if hal_data['control']['enabled']:
             percent_vbus = hal_data['pwm'][self.channel]['value']
         else:
@@ -74,6 +72,7 @@ class CANTalonSpeedController(SpeedController):
         self.can_id = can_id
         self.mode = 'percent_vbus'
         self.last_vel = 0
+        self.value = 0
         self.sensor = False
 
         super().__init__(motor, noise)
@@ -82,7 +81,7 @@ class CANTalonSpeedController(SpeedController):
         self.sensor = encoder
         encoder.set_can_id(self.can_id)
 
-    def set_from_hal_data(self, hal_data, dt, add_noise=False):
+    def set_from_hal_data(self, hal_data, dt):
         if self.can_id not in hal_data['CAN']:
             return
         import hal
@@ -91,6 +90,7 @@ class CANTalonSpeedController(SpeedController):
         sensor_pos = hal.TalonSRX_GetSensorPosition(Handle())
         sensor_vel = hal.TalonSRX_GetSensorVelocity(Handle())
         talon = hal_data['CAN'][self.can_id]
+        self.value = talon["value"]
         percent_vbus = 0
         if hal_data.get('profile_slot_select', 0) == 0:
             p_gain = talon['profile0_p']
@@ -122,7 +122,7 @@ class CANTalonSpeedController(SpeedController):
                          + f_gain*talon['value']
                 # Output is -1023 to 1023
                 percent_vbus = output/1023
-            elif talon['mode_select'] == 2:
+            elif talon['mode_select'] == 2: # Speed PID mode
                 if 'pid_accum' not in talon:
                     talon['pid_iaccum'] = 0
                 talon['closeloop_err'] = talon['value'] - sensor_vel
@@ -131,13 +131,13 @@ class CANTalonSpeedController(SpeedController):
                     talon['pid_iaccum'] = 0
                 output = p_gain*talon['closeloop_err']\
                          + i_gain*talon['pid_iaccum']\
-                         - d_gain*(sensor_vel - self.last_vel)/dt \
+                         + d_gain*(sensor_vel - self.last_vel)/dt \
                          + f_gain*talon['value']
                 # Output is -1023 to 1023
                 percent_vbus = output/1023
             elif talon['mode_select'] == 4:
                 percent_vbus = talon['value']/12
-        self.set_percent_vbus(percent_vbus, add_noise)
+        self.set_percent_vbus(percent_vbus)
         self.last_vel = sensor_vel
 
     def init_device(self):
@@ -146,6 +146,11 @@ class CANTalonSpeedController(SpeedController):
 
     def update_device(self):
         self.device.set(self.percent_vbus.get_value())
+
+    def get_state(self):
+        state = super().get_state()
+        state["value"] = self.value
+        return state
 
 
 #class CANTalonSpeedControllerFeedback(CANTalonSpeedController):

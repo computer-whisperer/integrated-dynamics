@@ -9,7 +9,7 @@ class Sensor:
         self.device = None
 
     def get_state(self, add_noise=False):
-        pass
+        return {}
 
     def update_hal_data(self, hal_data, dt, add_noise=False):
         """
@@ -29,7 +29,7 @@ class Sensor:
     def get_value_prediction(self):
         return {}
 
-    def get_variance(self):
+    def get_variance_sources(self):
         return {}
 
 
@@ -48,10 +48,10 @@ class Encoder(Sensor):
     def get_state(self, add_noise=False):
         """
         :returns a dictionary of state values from the sensor.
-        State values are "position" and "velocity" in units of rotations and rotations/second
+        State values are "position" and "velocity" in units of rotations and rotations/minute
         """
         pos = self.position.get_value()
-        vel = self.velocity.get_value()
+        vel = self.velocity.get_value()*60
         if add_noise:
             pos += np.random.normal(0, math.sqrt(self.variance))
             vel += np.random.normal(0, math.sqrt(self.variance))
@@ -67,9 +67,13 @@ class Encoder(Sensor):
                 encoder['count'] = state["position"]*self.tics_per_rev
                 return
 
+    def init_device(self):
+        import wpilib
+        self.device = wpilib.Encoder(self.a_channel, self.b_channel)
+
     def poll_sensor(self):
         self.position.set_value(self.device.getDistance())
-        self.position.set_value(self.device.getRate())
+        self.velocity.set_value(self.device.getRate())
 
     def get_value_prediction(self):
         return {
@@ -77,9 +81,10 @@ class Encoder(Sensor):
             self.velocity: self.gearbox.velocity
         }
 
-    def get_variance(self):
+    def get_variance_sources(self):
         return {
-            self.position: self.variance
+            self.gearbox.position: self.variance,
+            self.gearbox.velocity: self.variance
         }
 
 
@@ -92,9 +97,9 @@ class CANTalonEncoder(Encoder):
         state = self.get_state(add_noise)
         if self.can_id in hal_data['CAN']:
             hal_data['CAN'][self.can_id]['enc_position'] = state["position"]*self.tics_per_rev
-            hal_data['CAN'][self.can_id]['enc_velocity'] = state["velocity"]*self.tics_per_rev
+            hal_data['CAN'][self.can_id]['enc_velocity'] = state["velocity"]*self.tics_per_rev*60
             hal_data['CAN'][self.can_id]['sensor_position'] = state["position"]*self.tics_per_rev
-            hal_data['CAN'][self.can_id]['sensor_velocity'] = state["velocity"]*self.tics_per_rev
+            hal_data['CAN'][self.can_id]['sensor_velocity'] = state["velocity"]*self.tics_per_rev*60
 
     def poll_sensor(self):
         self.position.set_value(self.device.getPosition()/self.tics_per_rev)
@@ -128,9 +133,9 @@ class AnalogGyro(Sensor):
             self.angle: self.load.position[2]
         }
 
-    def get_variance(self):
+    def get_variance_sources(self):
         return {
-            self.angle: self.variance
+            self.load.position[2]: self.variance
         }
 
 
@@ -168,9 +173,9 @@ class NavX(Sensor):
             data[self.accel_y] = self.load.local_accel[1]
         return data
 
-    def get_variance(self):
-        data = {self.angle: self.gyro_variance}
+    def get_variance_sources(self):
+        data = {self.load.position[2]: self.gyro_variance}
         if self.do_accel:
-            data[self.accel_x] = self.accel_variance
-            data[self.accel_y] = self.accel_variance
+            self.load.local_accel[0] = self.accel_variance
+            self.load.local_accel[1] = self.accel_variance
         return data

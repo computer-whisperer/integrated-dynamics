@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import wpilib
-from dynamics import get_dynamics
+
 
 class MyRobot(wpilib.SampleRobot):
 

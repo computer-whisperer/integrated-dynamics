@@ -4,8 +4,11 @@ import math
 
 class MyRobotDynamics(dynamics.DynamicsEngine):
 
+    SINK_IN_SIMULATION = True
+    SINK_TO_SIMPLESTREAMER = True
+
     def build_loads(self):
-        # Setup a simple drivetrain
+        # Init drivetrain components (the assembly does this for us)
 
         # Two CIM
         left_motor = dynamics.CIMMotor()
@@ -21,14 +24,11 @@ class MyRobotDynamics(dynamics.DynamicsEngine):
         self.loads["drivetrain"].add_wheel(left_wheels, x_origin=-.5)
         self.loads["drivetrain"].add_wheel(right_wheels, x_origin=.5, r_origin=math.pi)
 
-        # Init sensors
-        self.sensors['left_encoder'] = dynamics.Encoder(left_gearbox, 0, 1)
-        self.sensors['right_encoder'] = dynamics.Encoder(right_gearbox, 2, 3)
+        # Init drivetrain sensors
+        #self.sensors['gyro'] = dynamics.AnalogGyro(self.loads['drivetrain'], 0)
+        #self.sensors['left_encoder'] = dynamics.Encoder(left_gearbox, 0, 1)
+        #self.sensors['right_encoder'] = dynamics.Encoder(right_gearbox, 2, 3)
 
-        # Init controller
-        self.controllers['left_controller'] = dynamics.PWMSpeedController(left_motor, 0)
-        self.controllers['right_controller'] = dynamics.PWMSpeedController(right_motor, 1)
-
-
-def get_dynamics(mode):
-    return MyRobotDynamics.cached_init(mode)
+        # Set drivetrain controllers
+        self.controllers['left_drive'] = dynamics.PWMSpeedController(left_motor, 0)
+        self.controllers['right_drive'] = dynamics.PWMSpeedController(right_motor, 1)

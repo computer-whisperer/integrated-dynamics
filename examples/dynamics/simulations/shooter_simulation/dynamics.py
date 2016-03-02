@@ -2,15 +2,18 @@ from int_dynamics import dynamics
 
 
 class MyRobotDynamics(dynamics.DynamicsEngine):
+    SINK_IN_SIMULATION = True
+    SINK_TO_NT = True
 
     def build_loads(self):
         shooter_motor = dynamics.CIMMotor()
-        shooter_gearbox = dynamics.GearBox([shooter_motor], 2, 0)
-        shooter_wheel = dynamics.SimpleWheels(shooter_gearbox, 8)
-        self.shooter_load = dynamics.OneDimensionalLoad([shooter_wheel], 5)
+        shooter_gearbox = dynamics.GearBox([shooter_motor], 1, 0)
+        shooter_wheel = dynamics.SimpleWheels(shooter_gearbox, 4)
+        self.shooter_load = dynamics.OneDimensionalLoad([shooter_wheel], 1)
         self.loads["shooter_wheel"] = self.shooter_load
-        self.controllers["shooter"] = dynamics.SpeedController(shooter_motor)
-        self.controllers["shooter"].set_percent_vbus(.1)
+        self.sensors["shooter_enc"] = dynamics.CANTalonEncoder(shooter_gearbox, 360)
+        self.controllers["shooter"] = dynamics.CANTalonSpeedController(shooter_motor, 0)
+        self.controllers["shooter"].add_encoder(self.sensors["shooter_enc"])
 
     def add_ball(self):
         wheel_mass = self.shooter_load.mass.get_value()

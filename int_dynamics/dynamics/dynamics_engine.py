@@ -1,149 +1,334 @@
 import time
 from collections import OrderedDict
-import sys
 import numpy as np
 import theano
 import theano.tensor as T
 from theano import ifelse
+from int_dynamics.version import __version__
+from os.path import join, exists, dirname
+from os import makedirs
+import pickle
+import threading
+import hashlib
+import sys
 from theano.tensor import slinalg
 
 from int_dynamics import utilities
+
+try:
+    import simplestreamer
+except ImportError:
+    pass
 
 
 class DynamicsEngine:
 
     SINK_IN_SIMULATION = False
-    SINK_TO_NT = True
+    SINK_TO_NT = False
+    SINK_TO_SIMPLESTREAMER = False
+    SS_SIM_PORT = 5803
+    SS_EST_PORT = 5804
+
+    RAM_CLEAN = True
+
+    DEBUG_VERBOSITY = 0
 
     def __init__(self, mode="simulation"):
         self.mode = mode
         self.loads = {}
         self.sensors = {}
         self.controllers = {}
+        self.costs = {}
 
         self.add_noise = theano.shared(0)
 
         self.simulation_func = None
-        self.simulation_sensor_func = None
-        self.prediction_func = None
+
+        self.estimation_func = None
+        self.state_flush_func = None
+        self.sensor_flush_func = None
 
         self.state_list = None
         self.state_mean = theano.shared(np.array([[0.0]]), theano.config.floatX)
         self.state_covariance = theano.shared(np.array([[0.0]]), theano.config.floatX)
+        self.state_derivative = theano.shared(np.array([[0.0]]), theano.config.floatX)
+
+        # Shared variable updates
+        self.state_prediction_mean_update = None
+        self.state_prediction_covariance_update = None
+        self.state_prediction_derivative_update = None
+        self.state_prediction_debugger = None
+
+        self.state_estimation_mean_update = None
+        self.state_estimation_covariance_update = None
+
+        self.state_flush_updates = []
+        self.sensor_flush_updates = []
+
+        self.feedback_gains_clock = theano.shared(np.array([0.0]), theano.config.floatX)
+        self.feedback_gains = theano.shared(np.array([[[0.0]]]), theano.config.floatX)
+        self.feedback_gains_progress_update = None
+        self.feedback_gains_progression_func = None
 
         self.sensor_value_list = []
+        self.sensor_prediction_list = []
+        self.controller_list = []
 
         self.dt = theano.shared(0.0, theano.config.floatX)
         self.tic_time = 0
 
         self.sd = None
+        self.streamer = None
 
-        self.build_functions()
+        self.rebuild_functions()
 
     @classmethod
     def cached_init(cls, mode):
         filename = sys.modules[cls.__module__].__file__
-        return utilities.cache_object(filename, cls, mode)
+        sys.setrecursionlimit(100000)
+        with open(filename, 'rb') as f:
+            m = hashlib.md5()
+            while True:
+                data = f.read(8192)
+                if not data:
+                    break
+                m.update(data)
+            file_hash = m.hexdigest()
+        build_lock = getattr(cls, "build_lock", None)
+        if build_lock is None:
+            build_lock = threading.Lock()
+        with build_lock:
+            cache_fname = "cached_object--{}--{}.pickle".format(__version__, file_hash)
+            cache_dir = join(dirname(filename), ".pickle_cache")
+            if not exists(cache_dir):
+                makedirs(cache_dir)
+            cache_path = join(cache_dir, cache_fname)
+            if exists(cache_path):
+                print("Loading cached dynamics engine instance.")
+                obj = pickle.load(open(cache_path, 'rb'))
+                obj.mode = mode
+                # Run the function rebuild, and re-cache if any were recompiled.
+                rebuild_count = obj.rebuild_functions()
+                if rebuild_count > 0:
+                    print("Rebuilt {} functions from cached dynamics engine instance".format(rebuild_count))
+                else:
+                    if obj.RAM_CLEAN:
+                        obj.clean_build_memory()
+                    return obj
+            else:
+                obj = cls(mode)
+            print("Caching dynamics engine instance.")
+            with open(cache_path, 'wb') as f:
+                pickle.dump(obj, f, -1)
+        if obj.RAM_CLEAN:
+            obj.clean_build_memory()
+        return obj
 
-    def build_functions(self):
-        """
-        Build all of the Theano tensors and functions for the dynamics engine.
-        """
-        print("Building the dynamics functions for run mode {}, "
-              "this may take some time depending on how complex your model is.".format(self.mode))
-        self.build_loads()
+    def rebuild_functions(self):
+        rebuild_count = 0
+        if self.mode in ["simulation", "estimation"] and self.simulation_func is None:
+            self.build_simulation_function()
+            rebuild_count += 1
+        if self.mode in ["simulation"] and self.sensor_flush_func is None:
+                self.build_sensor_flush_function()
+                rebuild_count += 1
+        if self.mode in ["estimation"] and self.estimation_func is None:
+                self.build_estimation_function()
+                rebuild_count += 1
+        if self.state_flush_func is None:
+            self.build_state_flush_function()
+            rebuild_count += 1
+        return rebuild_count
 
-        ###################
-        # Calculate some data, then build simulation function if asked.
-        ####################
+    def clean_build_memory(self):
+        print("dynamics engine took {} bytes of memory pre-clean.".format(sys.getsizeof(self)))
+        del self.state_prediction_mean_update
+        del self.state_prediction_covariance_update
+        del self.state_prediction_derivative_update
 
-        # Build state data
+        del self.state_estimation_mean_update
+        del self.state_estimation_covariance_update
+
+        del self.state_flush_updates
+        del self.sensor_flush_updates
+        print("dynamics engine takes {} bytes of memory post-clean.".format(sys.getsizeof(self)))
+
+    def build_simulation_function(self):
+        if self.state_prediction_mean_update is None:
+            print("Building dynamics engine simulation updates. This may take a while depending on how complex your model is.")
+            self.build_loads()
+            debugger = utilities.DebugTensorLogger(self.DEBUG_VERBOSITY)
+            self.state_prediction_debugger = debugger
+
+            # Build state data
+            self.state_list, state_derivative_list, state_vector = self._build_states_and_derivatives(state_order=self.state_list)
+            debugger.add_tensor(state_vector, "input state prediction mean", 1)
+            previous_state_covariance = ifelse.ifelse(T.eq(self.state_covariance.shape[0], 1), T.zeros((state_vector.shape[0],state_vector.shape[0])), self.state_covariance)
+            debugger.add_tensor(previous_state_covariance, "input state prediction covariance", 1)
+
+            # Run state prediction
+            self.state_prediction_mean_update, \
+            self.state_prediction_derivative_update, \
+            self.state_prediction_covariance_update = self._build_prediction(
+                state_derivative_list,
+                state_vector,
+                previous_state_covariance,
+                debugger=debugger
+            )
+            debugger.add_tensor(self.state_prediction_mean_update, "state prediction mean", 1)
+            debugger.add_tensor(self.state_prediction_derivative_update, "state prediction derivative", 2)
+            debugger.add_tensor(self.state_prediction_covariance_update, "state prediction covariance", 1)
+
+        print("Building dynamics engine simulation function. This may take a while depending on how complex your model is.")
+        # Simulation update function
+        state_updates = ([
+            (self.state_mean, T.unbroadcast(self.state_prediction_mean_update.dimshuffle(0, 'x'), 1)),
+            (self.state_derivative, self.state_prediction_derivative_update),
+            (self.state_covariance, self.state_prediction_covariance_update)
+        ])
+        state_updates.extend(self.state_prediction_debugger.get_updates())
+        self.simulation_func = theano.function([], [], updates=state_updates)
+
+    def build_estimation_function(self):
+        if self.state_estimation_mean_update is None:
+            print("Building dynamics engine estimation updates. This may take a bit depending on how complex your model is.")
+            if len(self.sensor_prediction_list) == 0:
+                self.state_estimation_covariance_update = self.state_covariance
+                self.state_estimation_mean_update = T.addbroadcast(self.state_mean, 1)
+            else:
+                # What we think the sensor values should be
+                sensor_prediction = T.stack(self.sensor_prediction_list)
+
+                # Derivative of the sensor prediction with respect to the state prediction
+                _, sensor_state_derivative = utilities.get_list_derivative(self.sensor_prediction_list, self.state_list)
+                # Covariance of the predicted sensor values
+                sensor_covariance = utilities.get_covariance_matrix_from_object_dict(
+                    sensor_prediction, self.sensors, {sensor_state_derivative: self.state_covariance}
+                )
+                sensor_values = T.stack(self.sensor_value_list)
+
+                # Run state prediction
+                self.state_estimation_mean_update, self.state_estimation_covariance_update = self._build_estimation(
+                    sensor_prediction,
+                    sensor_values,
+                    sensor_covariance,
+                    sensor_state_derivative,
+                    self.state_mean,
+                    self.state_covariance
+                )
+        print("Building dynamics engine estimation function. This may take a bit depending on how complex your model is.")
+        # Estimation update function
+        state_updates = ([
+            (self.state_mean, T.unbroadcast(self.state_estimation_mean_update.dimshuffle(0, 'x'), 1)),
+            (self.state_covariance, self.state_estimation_covariance_update)
+        ])
+        self.estimation_func = theano.function([], [], updates=state_updates)
+
+    def build_optimization_function(self):
+        if self.feedback_gains_progress_update is None:
+            # Index our controllers into a list
+            for controller in self.controllers:
+                self.controller_list.append(controller)
+            # Step forward in time from the current state over self.feedback_gains_clock
+            result, updates = theano.scan(
+                    fn=self._simulation_scan_func,
+                    sequences=[
+                        dict(input=self.feedback_gains_clock, taps=[-1, 0]),
+                        self.feedback_gains
+                    ],
+            )
+
+    # This inner scan function steps the simulation forward in time from prev_time to new_time each iteration
+    def _simulation_scan_func(self, prev_time, new_time, feedback_gains, state_mean_covariance, state_covariance_covariance):
+        # Hard-set dt
+        self.dt = new_time - prev_time
+
+        feedback_state = T.concatenate((self.state_estimation_mean_update, self.state_estimation_covariance_update.flatten()))
+
+        # Hard-set controllers to respond to feedback gains
+        for i in range(len(self.controller_list)):
+            self.controller_list[i].percent_vbus = T.dot(feedback_gains[i], feedback_state)
+
         self.state_list, state_derivative_list, state_vector = self._build_states_and_derivatives(state_order=self.state_list)
 
-        # Build state prediction mean, derivative, and covariance
-        state_prediction_mean = self._build_state_ode_update(self.state_list, state_derivative_list, state_vector)
-        _,  state_prediction_derivative = utilities.get_list_derivative(state_prediction_mean, self.state_list)
-        state_covariance = ifelse.ifelse(T.eq(self.state_covariance.shape[0], 1), T.zeros_like(state_prediction_derivative), self.state_covariance)
-        state_prediction_covariance = utilities.get_covariance_matrix_from_object_dict(
-            state_prediction_mean, self.loads, {state_prediction_derivative: state_covariance}
-        )
+        # Get new predicted state
+        self.state_prediction_mean_update, \
+        self.state_prediction_derivative_update, \
+        self.state_prediction_covariance_update = self._build_prediction(state_derivative_list, state_vector, self.state_covariance)
 
-        # Build sensor data
-        sensor_prediction_data = {}
+        # Get predicted sensor values
         for sensor in self.sensors:
             value_predictions = self.sensors[sensor].get_value_prediction()
             for sensor_value in value_predictions:
                 self.sensor_value_list.append(sensor_value)
-                sensor_prediction_data[sensor_value] = value_predictions[sensor_value]
-            sensor_prediction_data.update(self.sensors[sensor].get_value_prediction())
+                self.sensor_prediction_list.append(value_predictions[sensor_value])
 
-        # Function builds for simulation mode
-        if self.mode == "simulation":
+        # What we think the sensor values should be
+        sensor_prediction = T.stack(self.sensor_prediction_list)
 
-            # Simulation update function
-            state_updates = self._build_state_updates(state_prediction_mean)
-            state_updates.extend([
-                (self.state_mean, T.unbroadcast(state_prediction_mean.dimshuffle(0, 'x'), 1)),
-                (self.state_covariance, state_prediction_covariance)
-            ])
-            self.simulation_func = theano.function([], [], updates=state_updates)
+        # Derivative of the sensor prediction with respect to the state prediction
+        _, sensor_state_derivative = utilities.get_list_derivative(self.sensor_prediction_list, self.state_list)
+        # Covariance of the predicted sensor values
+        sensor_covariance = utilities.get_covariance_matrix_from_object_dict(
+            sensor_prediction, self.sensors, {sensor_state_derivative: self.state_prediction_covariance_update}
+        )
+        sensor_values = sensor_prediction + 0
 
+        # Run state estimation, but with substituting the sensor prediction for the sensor value
+        # The reason for this is to simulate the best case scenario, adding in covariance later
+        self.state_estimation_mean_update, self.state_estimation_covariance_update = self._build_estimation(
+            sensor_prediction,
+            sensor_values,
+            sensor_covariance,
+            sensor_state_derivative,
+            self.state_prediction_mean_update,
+            self.state_prediction_covariance_update
+        )
+
+        _, state_estimation_mean_sensor_value_derivative = utilities.get_list_derivative(self.state_estimation_mean_update, sensor_values)
+        _, state_estimation_covariance_sensor_value_derivative = utilities.get_list_derivative(self.state_estimation_covariance_update_update, sensor_values)
+
+        state_mean_covariance = utilities.get_covariance_matrix({
+            state_estimation_mean_sensor_value_derivative: sensor_covariance,
+        })
+        state_covariance_covariance = utilities.get_covariance_matrix({
+            state_estimation_covariance_sensor_value_derivative: sensor_covariance,
+        })
+
+        # Now we update the worst-case scenario, calculating the covariance of both state mean and covariance
+        pesssimistic_state_covariance = utilities.get_covariance_matrix()
+
+        updates = self._build_state_updates(self.state_estimation_mean_update)
+        updates.extend([
+            (self.state_mean, self.state_estimation_mean_update),
+            (self.state_covariance, self.state_estimation_covariance_update)
+        ])
+
+
+
+        previous_cost = T.sum([cost.get_cost() for cost in self.costs])
+        return [self.state_estimation_mean_update, self.state_estimation_covariance_update, previous_cost, feedback_state], updates
+
+    def build_state_flush_function(self):
+        if len(self.state_flush_updates) == 0:
+            self.state_flush_updates = self._build_state_updates(self.state_mean)
+        self.state_flush_func = theano.function([], [], updates=self.state_flush_updates)
+
+    def build_sensor_flush_function(self):
+        if len(self.sensor_flush_updates) < 0:
+            for sensor in self.sensors:
+                value_predictions = self.sensors[sensor].get_value_prediction()
+                for sensor_value in value_predictions:
+                    self.sensor_value_list.append(sensor_value)
+                    self.sensor_prediction_list.append(value_predictions[sensor_value])
             # Sensor value update function
-            sensor_value_updates = [(value, sensor_prediction_data[value]) for value in self.sensor_value_list]
-            self.simulation_sensor_func = theano.function([], [], updates=sensor_value_updates)
-            return
-
-        ####################################################################
-        # We want more than just a wimpy little simulation if we get here. #
-        # Calculate more data, then build estimation function if asked.    #
-        ####################################################################
-
-        # Calculate read sensor values
-        read_sensor_values = T.concatenate(self.sensor_value_list)
-
-        prev_sensor_prediction = T.concatenate([sensor_prediction_data[value] for value in self.sensor_value_list])
-
-        # The sensor predictions we get from sensor_prediction_data are all based on shared variables, which currently
-        # contain the state values from last tick. We need to update these to base upon the new predicted state. We do
-        # this by getting the first derivative and multiplying
-        _, sensor_state_derivative = utilities.get_list_derivative(
-            [sensor_prediction_data[value] for value in self.sensor_value_list],
-            self.state_list
-        )
-
-        # Get new sensor prediction mean
-        sensor_prediction_mean = T.dot(sensor_state_derivative, state_prediction_mean)
-        sensor_prediction_covariance = utilities.get_covariance_matrix_from_object_dict(
-            prev_sensor_prediction, self.sensors, {sensor_state_derivative: state_prediction_covariance}
-        )
-
-        # From the state prediction and the sensor data, we get the state estimation via a kalman filter
-        kalman = T.dot(T.dot(state_prediction_covariance, sensor_state_derivative.T), T.inv(sensor_prediction_covariance))
-        state_estimation_mean = state_prediction_mean + T.dot(kalman, read_sensor_values - sensor_prediction_mean)
-        state_estimation_covariance = T.dot(T.identity_like(self.state_covariance) - T.dot(kalman, sensor_state_derivative), state_prediction_covariance)
-
-        if self.mode == "estimation":
-
-            # Estimation update function
-            state_updates = self._build_state_updates(state_estimation_mean)
-            state_updates.extend([
-                (self.state_mean, state_estimation_mean),
-                (self.state_covariance, state_estimation_covariance)
-            ])
-            self.estimation_func = theano.function([], [], updates=state_updates)
-            return
-
-        ##############################################################
-        # We want more than just a trivial estimator if we get here. #
-        # Calculate more data, then build the optimizer.             #
-        ##############################################################
+            self.sensor_flush_updates = [(value, prediction) for value, prediction in zip(self.sensor_value_list, self.sensor_prediction_list)]
+        self.sensor_flush_func = theano.function([], [], updates=self.sensor_flush_updates)
 
     def _build_states_and_derivatives(self, state_order=None):
         """
         Get state derivative dictionaries from all components, build state and state derivative lists,
         and build complete state vectors and derivative matrices.
-
-
         """
         state_derivatives = {}
         for component in self.loads:
@@ -157,7 +342,7 @@ class DynamicsEngine:
         state_derivatives = trimmed_state_derivatives
 
         if state_order is not None:
-            state_derivatives = OrderedDict(sorted(state_derivatives, key=lambda t: state_order.index(t)))
+            state_derivatives = OrderedDict(sorted(state_derivatives, key=lambda t: state_order.index(t) if t in state_order else 100))
 
         # build two-dimensional states and derivatives
         twodim_states = []
@@ -176,29 +361,64 @@ class DynamicsEngine:
 
         return state_list, state_derivative_list, state_vector
 
-    def _build_state_ode_update(self, state_list, state_derivative_list, state_vector):
+    def _build_prediction(self, state_derivative_list, state_vector, state_covariance, debugger=None):
         """
-        Build the updated state vector with the ode integration equation
-        """
-        derivative_matrix, A = utilities.get_list_derivative(state_derivative_list, state_list)
-        b = derivative_matrix - T.dot(A, state_vector)
+        Build the state prediction for self.dt seconds into the future
+        :param state_derivative_list: A list of derivatives of the various state values with respect to time.
+        :param state_vector: A vector of the current predicted state.
+        :param state_covariance: The current covariance of the state vector.
 
-        # Equation given by http://math.stackexchange.com/questions/1567784/matrix-differential-equation-xt-axtb-solution-defined-for-non-invertible/1567806?noredirect=1#comment3192556_1567806
+        :return The new predicted state vector.
+        :return The new derivative of the predicted state with respect to the last state.
+        :return The new covariance of the state vector.
+        """
+
+        derivative_matrix, A = utilities.get_list_derivative(state_derivative_list, self.state_list)
+        b = derivative_matrix - T.dot(A, state_vector)
+        if debugger is not None:
+            debugger.add_tensor(A, "ODE A matrix")
+            debugger.add_tensor(b, "ODE b matrix")
+
+        # Equation given by http://math.stackexchange.com/a/1567806/294141
         # Taylor series method
         init_term = T.identity_like(A)*self.dt
 
         def series_advance(i, last_term, A, wrt):
             next_term = T.dot(last_term, A)*wrt/i
             next_term = T.unbroadcast(next_term, 0, 1)
-            return next_term, theano.scan_module.until(T.all(abs(next_term) < 10e-3))
+            return next_term, theano.scan_module.until(T.all(abs(next_term) < 10e-6))
         terms, _ = theano.scan(series_advance,
-                               sequences=[T.arange(2, 100)],
+                               sequences=[T.arange(2, 150)],
                                non_sequences=[A, self.dt],
                                outputs_info=init_term,
                                )
         integral = T.sum(terms, axis=0) + init_term
 
-        return (T.dot(slinalg.expm(A*self.dt), state_vector) + T.dot(integral, b)).flatten()
+        # The mean prediction of the new state
+        prediction_mean = (T.dot(slinalg.expm(A*self.dt), state_vector) + T.dot(integral, b)).flatten()
+
+        # Derivative of the new state with respect to last state
+        _,  prediction_derivative = utilities.get_list_derivative(prediction_mean, self.state_list)
+        #prediction_derivative = utilities.replace_nans(prediction_derivative)
+
+        # Covariance of the new state
+        prediction_covariance = utilities.get_covariance_matrix_from_object_dict(
+            prediction_mean, self.loads, {prediction_derivative: state_covariance}, debugger=debugger
+        )
+
+        return prediction_mean, prediction_derivative, prediction_covariance
+
+    def _build_estimation(self, sensor_prediction, sensor_values, sensor_covariance, sensor_derivative, state_mean, state_covariance):
+        # From the state prediction and the sensor data, we get the state estimation via a kalman filter
+        kalman = T.dot(T.dot(state_covariance, sensor_derivative.T), T.inv(sensor_covariance))
+        estimation_mean = state_mean + T.dot(kalman, sensor_values - sensor_prediction)
+        estimation_covariance = \
+            T.dot(
+                T.identity_like(state_covariance) - T.dot(kalman, sensor_derivative),
+                state_covariance
+            )
+
+        return estimation_mean, estimation_covariance
 
     def _build_state_updates(self, new_state):
         index = 0
@@ -235,6 +455,15 @@ class DynamicsEngine:
             state_data["sensors"][sensor] = self.sensors[sensor].get_state()
         if self.SINK_TO_NT:
             self._publish_dictionary_to_nt(state_data, "integrated_dynamics")
+        if self.SINK_TO_SIMPLESTREAMER:
+            if self.streamer is None:
+                if self.mode == "simulation":
+                    self.streamer = simplestreamer.SimpleStreamer(self.SS_SIM_PORT)
+                elif self.mode == "estimation":
+                    self.streamer = simplestreamer.SimpleStreamer(self.SS_EST_PORT)
+                else:
+                    self.streamer = simplestreamer.SimpleStreamer(5801)
+            self.streamer.send_data(state_data)
 
     def _publish_dictionary_to_nt(self, dictionary, nt_prefix):
         if self.sd is None:
@@ -251,15 +480,24 @@ class DynamicsEngine:
             else:
                 self.sd.putNumber("/".join((nt_prefix, dict_key)), dictionary[dict_key])
 
-    def simulation_update(self, dt, hal_data=None):
+    def simulation_update(self, dt, hal_data=None, resolve_error=True):
         start_time = time.time()
-        for controller in self.controllers:
-            self.controllers[controller].set_from_hal_data(hal_data, dt)
+        if hal_data is not None:
+            for controller in self.controllers:
+                self.controllers[controller].set_from_hal_data(hal_data, dt)
         self.dt.set_value(dt)
         self.simulation_func()
-        self.simulation_sensor_func()
-        for sensor in self.sensors:
-            self.sensors[sensor].update_hal_data(hal_data, dt)
+        self.state_prediction_debugger.do_checkup()
+        if resolve_error:
+            covariance = self.state_covariance.get_value()
+            new_state = utilities.sample_covariance_numpy(self.state_mean.get_value()[:, 0], covariance)
+            self.state_mean.set_value(new_state[:, None])
+            self.state_covariance.set_value(np.zeros_like(covariance))
+        self.state_flush_func()
+        self.sensor_flush_func()
+        if hal_data is not None:
+            for sensor in self.sensors:
+                self.sensors[sensor].update_hal_data(hal_data, dt)
         self.tic_time = time.time() - start_time
         if self.SINK_IN_SIMULATION:
             self.sink_state_data()
@@ -267,7 +505,21 @@ class DynamicsEngine:
     def estimation_update(self, dt):
         start_time = time.time()
         self.dt.set_value(dt)
+        self.simulation_func()
+
+        self.poll_sensors()
         self.estimation_func()
+        self.state_flush_func()
+        self.update_controllers()
+
+        self.tic_time = time.time() - start_time
+        self.sink_state_data()
+
+    def optimization_update(self):
+        start_time = time.time()
+
+        self.feedback_gain_progression_func()
+
         self.tic_time = time.time() - start_time
         self.sink_state_data()
 
@@ -281,8 +533,16 @@ class DynamicsEngine:
         for sensor in self.sensors:
             sensor.poll_sensor()
 
+    def update_controllers(self):
+        for controller in self.controllers:
+            self.controllers[controller].update_device()
+
     def get_state(self):
         state = {}
         for component in self.loads:
             state[component] = self.loads[component].get_state()
         return state
+
+    def __sizeof__(self):
+        return object.__sizeof__(self) + \
+            sum(sys.getsizeof(v) for v in self.__dict__.values())

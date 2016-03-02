@@ -81,8 +81,9 @@ class GearBox(Dynamic):
     Simulates the dynamics of a gearbox with one or more motors attached
     """
 
-    def __init__(self, motors, gear_ratio=10, dynamic_friction=.5):
-        self.friction = dynamic_friction
+    def __init__(self, motors, gear_ratio=10, dynamic_friction=.5, dynamic_friction_variance=0.05):
+        self.friction = theano.shared(dynamic_friction)
+        self.friction_variance = dynamic_friction_variance
         self.gear_ratio = gear_ratio
         self.position = theano.shared(0.0, theano.config.floatX)
         self.velocity = theano.shared(0.0, theano.config.floatX)
@@ -98,9 +99,14 @@ class GearBox(Dynamic):
         for motor in self.components:
             state_derivatives.update(motor.get_state_derivatives(load_moment))
             force_in += state_derivatives[motor.velocity]*self.gear_ratio*load_moment
-        force_in -= T.clip(self.velocity*200, -self.friction, self.friction)
+        force_in -= self.friction * T.clip(self.velocity, -1, 1)
         state_derivatives[self.velocity] = force_in/load_moment
         return state_derivatives
+
+    def get_variance_sources(self):
+        sources = super().get_variance_sources()
+        sources[self.friction] = self.friction_variance
+        return sources
 
 
 class SimpleArm(Dynamic):
@@ -148,12 +154,13 @@ class SolidWheels(Dynamic):
     Simulates the dynamics of a wheel with friction calculations
     """
 
-    def __init__(self, gearbox, count, diameter, static_cof, dynamic_cof, normal_force):
+    def __init__(self, gearbox, count, diameter, static_cof, dynamic_cof, normal_force, friction_error=0.05):
         self.diameter = diameter/12
         self.gearbox = gearbox
         self.mass = .25*count
-        self.total_static_cof = normal_force*static_cof
-        self.total_dynamic_cof = normal_force*dynamic_cof
+        self.friction_error = friction_error
+        self.total_static_cof = theano.shared(normal_force*static_cof)
+        self.total_dynamic_cof = theano.shared(normal_force*dynamic_cof)
         # Ground velocity
         self.velocity = theano.shared(np.array([0.0, 0.0]), theano.config.floatX)
         super().__init__(gearbox)
@@ -174,6 +181,12 @@ class SolidWheels(Dynamic):
         state_derivatives[slip] = (force_in - force_out[1])/self.mass
         state_derivatives[self.velocity] = force_out/self.mass
         return state_derivatives
+
+    def get_variance_sources(self):
+        sources = super().get_variance_sources()
+        sources[self.total_dynamic_cof] = self.friction_error
+        sources[self.total_static_cof] = self.friction_error
+        return sources
 
 
 class KOPWheels(SolidWheels):
@@ -275,7 +288,7 @@ class TwoDimensionalLoad:
             wheel["wheel"].velocity = T.dot(robot_velocity, bot_to_wheel)
             state_derivatives.update(wheel["wheel"].get_state_derivatives(self.mass))
             robot_acceleration.append(T.dot(state_derivatives[wheel["wheel"].velocity], wheel_to_bot))
-        total_acc = T.sum(robot_acceleration, axis=1)
+        total_acc = sum(robot_acceleration)
         self.local_accel = total_acc
         state_derivatives[self.velocity] = T.dot(total_acc, bot_to_world)
         return state_derivatives

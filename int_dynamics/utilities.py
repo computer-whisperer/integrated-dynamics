@@ -1,14 +1,13 @@
 import math
 import numpy as np
 import theano
-from theano import tensor as T
-from threading import Lock
-from int_dynamics.version import __version__
-from os.path import join, exists, dirname
-from os import makedirs
-import pickle
-import hashlib
+import warnings
 import sys
+from theano import tensor as T
+from theano.tensor import slinalg
+from theano.tensor.shared_randomstreams import RandomStreams
+from threading import Lock
+
 
 
 def ensure_column(tensor):
@@ -76,12 +75,15 @@ def rot_matrix(theta):
 build_lock = Lock()
 
 
-def get_covariance_matrix_from_object_dict(mean_vector, object_dict, extra_sources=None):
+def get_covariance_matrix_from_object_dict(mean_vector, object_dict, extra_sources=None, debugger=None):
     source_derivatives = {}
     for key in object_dict:
         variance_data = object_dict[key].get_variance_sources()
         for variance_source in variance_data:
-            _, variance_derivative = theano.gradient.jacobian(mean_vector, variance_source, disconnected_inputs='ignore')
+            variance_derivative = theano.gradient.jacobian(mean_vector, variance_source, disconnected_inputs='ignore').dimshuffle(0, 'x')
+            #variance_derivative = replace_nans(variance_derivative)
+            if debugger is not None:
+                debugger.add_tensor(variance_derivative, "variance derivative")
             source_derivatives[variance_derivative] = variance_data[variance_source]
     if extra_sources is not None:
         source_derivatives.update(extra_sources)
@@ -91,39 +93,73 @@ def get_covariance_matrix_from_object_dict(mean_vector, object_dict, extra_sourc
 def get_covariance_matrix(covariance_sources):
     components = []
     for covariance_derivative in covariance_sources:
-        p1 = T.dot(covariance_derivative, covariance_sources[covariance_derivative])
-        p2 = T.dot(p1, covariance_derivative.T)
+        p1 = T.dot(covariance_sources[covariance_derivative], covariance_derivative.T)
+        p2 = T.dot(covariance_derivative, p1)
         components.append(p2)
     return sum(components)
 
 
-def cache_object(file_path, object_class, *args, pickle_dir=".pickle_cache"):
-    sys.setrecursionlimit(10000)
-    with open(file_path, 'rb') as f:
-        m = hashlib.md5()
-        while True:
-            data = f.read(8192)
-            if not data:
-                break
-            m.update(data)
-        file_hash = m.hexdigest()
-    with build_lock:
-        metadata = {
-            "integrated_dynamics": __version__,
-            "args": args
-        }
-        cache_fname = "cached_object--{}--file_hash-{}.pickle".format(metadata, file_hash)
-        cache_dir = join(dirname(file_path), pickle_dir)
-        if not exists(cache_dir):
-            makedirs(cache_dir)
-        cache_path = join(cache_dir, cache_fname)
-        if exists(cache_path):
-            print("Loading pickled object {}".format(cache_fname))
-            obj = pickle.load(open(cache_path, 'rb'))
-        else:
-            obj = object_class(*args)
-            print("Pickling {}".format(obj))
-            with open(cache_path, 'wb') as f:
-                pickle.dump(obj, f, -1)
-    return obj
+def sample_covariance_theano(mean, covariance):
+    # http://scicomp.stackexchange.com/q/22111/19265
+    srng = RandomStreams(seed=481)
+    random = srng.normal(mean.shape)
+    decomp = slinalg.cholesky(covariance)
+    return T.dot(decomp, random) + mean
 
+
+def sample_covariance_numpy(mean, covariance):
+    nonzero_elements = abs(np.diag(covariance)) > 10**-10
+    trimmed_covariance = covariance[nonzero_elements, :][:, nonzero_elements]
+    sample_mean = mean
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        if any(nonzero_elements):
+            sample_mean[nonzero_elements] = np.random.multivariate_normal(mean[nonzero_elements], trimmed_covariance)
+    return sample_mean
+
+
+def replace_nans(tensor, value=0):
+    return T.set_subtensor(tensor[T.isnan(tensor).nonzero()], value)
+
+
+class DebugTensorLogger:
+
+    def __init__(self, verbosity_level=0):
+        self.verbosity_level = verbosity_level
+        self.tensors = []
+        self.updates = []
+        self.last_values = []
+
+    def add_tensor(self, tensor, name=None, verbosity=1):
+        if verbosity > self.verbosity_level:
+            return
+        default_val = 0
+        while np.ndim(default_val) < tensor.ndim:
+            default_val = np.array([default_val], dtype=tensor.dtype)
+        shared_var = theano.shared(default_val, name=name, strict=False)
+        self.tensors.append((shared_var, name))
+        self.updates.append((shared_var, T.unbroadcast(tensor, *range(tensor.ndim))))
+
+    def get_updates(self):
+        return self.updates
+
+    def do_checkup(self, check_nans=True, max_magnitude=10**10, raise_exception=True):
+        current_values = [(shared_var.get_value(), name) for shared_var, name in self.tensors]
+        for value, name in current_values:
+            if check_nans and (np.isnan(value)).any():
+                print("Warning: Nan encountered in debug tensor '{}'.".format(name))
+                break
+            if max_magnitude > 0 and (abs(value) > max_magnitude).any():
+                print("Warning: Too big of a value encountered in debug tensor '{}'.".format(name))
+                break
+        else:
+            self.last_values = current_values
+            return
+        np.set_printoptions(precision=2, suppress=True)
+        bad_name = name
+        for value, name in current_values:
+            print("Current value of {}: \n {}".format(name, value))
+        for value, name in self.last_values:
+            print("Last value of {}: \n {}".format(name, value))
+        if raise_exception:
+            raise ValueError("Invalid value encountered in debug tensor '{}'.".format(bad_name))
