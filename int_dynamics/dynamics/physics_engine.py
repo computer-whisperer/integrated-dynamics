@@ -39,8 +39,8 @@ class BasePhysicsEngine(object):
         #print(state)
         # For some reason pyfrc's x and y are flopped
         position = self.state.get("drivetrain", {}).get("position", [0, 0, 0])
-        self.physics_controller.y = position[0]
-        self.physics_controller.x = position[1]
+        self.physics_controller.x = position[0]
+        self.physics_controller.y = position[1]
         self.physics_controller.angle = position[2]
 
 

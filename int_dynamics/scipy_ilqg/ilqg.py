@@ -144,8 +144,13 @@ def ilqg(dynamics_fun_in, cost_fun_in, x0, u0, options_in={}):
         'cost':           None,  # initial cost for pre-rolled trajectory
     }
 
+    is_dynamics_engine = hasattr(dynamics_fun_in, "simulation_func")
+
     # serialize dynamics and cost function calls
-    dynamics_fun = lambda x, u: func_serializer(x, u, dynamics_fun_in)
+    if not is_dynamics_engine:
+        dynamics_fun = lambda x, u: func_serializer(x, u, dynamics_fun_in)
+    else:
+        dynamics_fun = dynamics_fun_in
     cost_fun = lambda x, u: func_serializer(x, u, cost_fun_in)
 
     # --- initial sizes and controls
@@ -161,26 +166,13 @@ def ilqg(dynamics_fun_in, cost_fun_in, x0, u0, options_in={}):
     dlamb = options["dlambdaInit"]
 
     # Initial trajectory
-    if x0.shape[0] == n:
-        diverge = True
-        for alpha in options["Alpha"]:
-            xn, un, costn = forward_pass(dynamics_fun, cost_fun, x0, alpha*u, None, None, None, array([1]), options["lims"])
-            # simplistic divergence test
-            if (abs(xn) < 1e8).all():
-                u = un[:, 0]
-                x = xn[:, 0]
-                cost = costn[:, 0]
-            else:
-                logger.info("\nEXIT: Initial control sequence caused divergence\n")
-                return xn, un, None, None, None, costn
-
-    elif x0.shape[0] == N+1: # already did initial fpass
-        x = x0
-        if options["cost"] is None:
-            raise ValueError("pre-rolled initial trajectory requires cost")
-        else:
-            cost = options["cost"]
-
+    diverge = True
+    for alpha in options["Alpha"]:
+        x, u, cost, fx, fu = forward_pass(dynamics_fun, cost_fun, x0, alpha*u, None, None, options["lims"])
+        # simplistic divergence test
+        if not (abs(x) < 1e8).all():
+            raise ValueError("\nEXIT: Initial control sequence caused divergence\n")
+    diverge = False
     flgChange = 1
     dcost = 0
     z = 0
@@ -193,14 +185,14 @@ def ilqg(dynamics_fun_in, cost_fun_in, x0, u0, options_in={}):
 
         # ==== STEP 1: differentiate dynamics along new trajectory
         if flgChange:
-            fx, fu, fxx, fxu, fuu = function_derivatives(x, vstack((u, full([1, m], nan))), dynamics_fun, second=True)
+            #fx, fu, fxx, fxu, fuu = function_derivatives(x, vstack((u, full([1, m], nan))), dynamics_fun, second=True)
             cx, cu, cxx, cxu, cuu = function_derivatives(x, vstack((u, full([1, m], nan))), cost_fun, second=True)
             flgChange = 0
 
         # ==== STEP 2: backward pass, compute optimal control law and cost-to-go
         backPassDone = 0
         while not backPassDone:
-            diverge, Vx, Vxx, l, L, dV = back_pass(cx, cu, cxx, cxu, cuu, fx, fu, fxx, fxu, fuu, lamb, options["regType"], options["lims"], u)
+            diverge, Vx, Vxx, l, L, dV = back_pass(cx, cu, cxx, cxu, cuu, fx, fu, None, None, None, lamb, options["regType"], options["lims"], u)
 
             if diverge:
                 logger.debug("Cholesky failed at timestep {}.".format(diverge))
@@ -222,37 +214,18 @@ def ilqg(dynamics_fun_in, cost_fun_in, x0, u0, options_in={}):
         # ==== STEP 3: line-search to find new control sequence, trajectory, cost
         fwdPassDone = 0
         if backPassDone:
-            if options["parallel"]: # parallel line-search
-                xnew, unew, costnew = forward_pass(dynamics_fun, cost_fun, x0, u, L, x[:N], l, options["Alpha"], options["lims"])
+            for alpha in options["Alpha"]:
+                xnew, unew, costnew, fxnew, funew = forward_pass(dynamics_fun, cost_fun, x0, u+l*alpha, L, x[:N], options["lims"])
                 dcost = cost.sum(axis=0) - costnew.sum(axis=0)
-                w = argmax(dcost)
-                dcost = dcost[w]
-                alpha = options["Alpha"][w]
                 expected = -alpha*(dV[0] + alpha*dV[1])
-                if expected > 0:
-                    z = dcost/expected
-                else:
-                    z = sign(dcost)
-                    logger.info("WARNING: non-positive expected reduction: should not occur")
-                if z > options["zMin"]:
-                    fwdPassDone = 1
-                    costnew = costnew[:,w]
-                    xnew = xnew[:,w]
-                    unew = unew[:,w]
-
-            else: # serial backtracking line-search
-                for alpha in options["Alpha"]:
-                    xnew, unew, costnew = forward_pass(dynamics_fun, cost_fun, x0, u+l*alpha, L, x[:N], None, array([]), options["lims"])
-                    dcost = cost.sum(axis=0) - costnew.sum(axis=0)
-                    expected = -alpha*(dV[0] + alpha*dV[1])
-                if expected > 0:
-                    z = dcost/expected
-                else:
-                    z = sign(dcost)
-                    logger.info("WARNING: non-positive expected reduction: should not occur")
-                if z > options["zMin"]:
-                    fwdPassDone = 1
-                    break
+            if expected > 0:
+                z = dcost/expected
+            else:
+                z = sign(dcost)
+                logger.info("WARNING: non-positive expected reduction: should not occur")
+            if z > options["zMin"]:
+                fwdPassDone = 1
+                break
 
         # ==== STEP 4: accept (or not)
         if fwdPassDone:
@@ -268,6 +241,8 @@ def ilqg(dynamics_fun_in, cost_fun_in, x0, u0, options_in={}):
             u = unew
             x = xnew
             cost = costnew
+            fu = funew
+            fx = fxnew
             flgChange = 1
 
             # terminate ?
@@ -294,36 +269,42 @@ def ilqg(dynamics_fun_in, cost_fun_in, x0, u0, options_in={}):
     return x, u, L, Vx, Vxx, cost
 
 
-def forward_pass(dynamics_fun, cost_fun, x0, u, L, x, du, alpha, lims):
+def forward_pass(dynamics_fun, cost_fun, x0, u, L, x, lims):
 
     n = x0.shape[0]
-    K = alpha.shape[0]
     N = u.shape[0]
     m = u.shape[1]
 
-    xnew = zeros((N+1, K, n))
+    xnew = zeros((N+1, n))
     xnew[0, :, :] = x0
-    unew = zeros((N, K, m))
-    cnew = zeros((N+1, K))
+    unew = zeros((N, m))
+    cnew = zeros((N+1))
+    fxnew = zeros((N+1, n))
+    funew = zeros((N+1, m))
+
+    dynamics_fun.state_mean.set_value(x0)
+    dynamics_fun.state_flush_func()
     for i in range(N):
         unew[i] = u[i]
 
-        if du is not None:
-            unew[i] = unew[i] + dot(alpha[:, None], du[None, i, :])
-
         if L is not None:
-            dx = xnew[i] - x[i]
+            dx = xnew[i] - x[ i]
             unew[i] = unew[i] + dot(dx, L[i].T)
 
         if lims is not None:
             unew[i] = clip(unew[i], lims[:, 0], lims[:, 1])
 
-        xnew[i+1] = dynamics_fun(xnew[i], unew[i])
+        dynamics_fun.set_controllers(unew[i])
+        dynamics_fun.simulation_func()
+        dynamics_fun.state_flush_func()
+        xnew[i+1] = dynamics_fun.state_mean.get_value()
+        fxnew[i+1] = dynamics_fun.state_derivative.get_value()
+        funew[i+1] = dynamics_fun.control_derivative.get_value()
         cnew[i] = cost_fun(xnew[i], unew[i])
 
-    cnew[N] = cost_fun(xnew[N], full([K, m], nan))
+    cnew[N] = cost_fun(xnew[N], full([m], nan))
 
-    return xnew, unew, cnew
+    return xnew, unew, cnew, fxnew, funew
 
 
 def back_pass(cx, cu, cxx, cxu, cuu, fx, fu, fxx, fxu, fuu, lamb, regType, lims, u):

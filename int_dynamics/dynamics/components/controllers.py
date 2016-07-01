@@ -1,9 +1,10 @@
 import theano
 import theano.tensor as T
 import numpy as np
+from .. import base
 
 
-class SpeedController:
+class SpeedController(base.ControlInput):
     """
     Simulates the dynamics of a standard speed controller
     """
@@ -17,6 +18,9 @@ class SpeedController:
 
     def set_percent_vbus(self, value):
         self.percent_vbus.set_value(max(-1, min(1, value)))
+
+    def get_control_tensor(self):
+        return self.percent_vbus
 
     def set_from_hal_data(self, hal_data, dt):
         pass

@@ -1,3 +1,4 @@
+import int_dynamics.dynamics.components.actuators
 from int_dynamics import dynamics
 import math
 
@@ -5,14 +6,15 @@ import math
 class MyRobotDynamics(dynamics.DynamicsEngine):
 
     SINK_IN_SIMULATION = True
+    SINK_TO_SIMPLESTREAMER = True
     SINK_TO_NT = False
 
     def build_loads(self):
         # Setup a simple drivetrain
 
         # Two CIM
-        left_motor = dynamics.CIMMotor()
-        right_motor = dynamics.CIMMotor()
+        left_motor = int_dynamics.dynamics.components.actuators.CIMMotor()
+        right_motor = int_dynamics.dynamics.components.actuators.CIMMotor()
         # Two 10:1 gearboxes
         left_gearbox = dynamics.GearBox([left_motor], 10, 1)
         right_gearbox = dynamics.GearBox([right_motor], 10, 1)

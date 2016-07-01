@@ -1,9 +1,10 @@
 import theano
 import math
 import numpy as np
+from int_dynamics.dynamics import base
 
 
-class Sensor:
+class Sensor(base.FeedbackSource):
 
     def __init__(self):
         self.device = None

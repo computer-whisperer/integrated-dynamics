@@ -1,3 +1,4 @@
+import int_dynamics.dynamics.components.actuators
 from int_dynamics import dynamics
 import math
 
@@ -11,8 +12,8 @@ class MyRobotDynamics(dynamics.DynamicsEngine):
         # Init drivetrain components (the assembly does this for us)
 
         # Two CIM
-        left_motor = dynamics.CIMMotor()
-        right_motor = dynamics.CIMMotor()
+        left_motor = int_dynamics.dynamics.components.actuators.CIMMotor()
+        right_motor = int_dynamics.dynamics.components.actuators.CIMMotor()
         # Two 10:1 gearboxes
         left_gearbox = dynamics.GearBox([left_motor], 10, 1)
         right_gearbox = dynamics.GearBox([right_motor], 10, 1)

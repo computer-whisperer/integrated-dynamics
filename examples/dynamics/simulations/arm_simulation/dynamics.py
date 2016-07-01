@@ -1,3 +1,4 @@
+import int_dynamics.dynamics.components.actuators
 from int_dynamics import dynamics
 
 
@@ -8,7 +9,7 @@ class MyRobotDynamics(dynamics.DynamicsEngine):
         # Setup a simple arm mover
 
         # Start with an RS775 Motor
-        motor = dynamics.RS775Motor()
+        motor = int_dynamics.dynamics.components.actuators.RS775Motor()
         # Add a 71:1 gearbox
         gearbox = dynamics.GearBox(motor, 71)
         # Add a 1' arm

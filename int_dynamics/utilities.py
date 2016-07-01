@@ -4,10 +4,9 @@ import theano
 import warnings
 import sys
 from theano import tensor as T
-from theano.tensor import slinalg
+from theano.tensor import slinalg, basic
 from theano.tensor.shared_randomstreams import RandomStreams
 from threading import Lock
-
 
 
 def ensure_column(tensor):
@@ -83,7 +82,8 @@ def get_covariance_matrix_from_object_dict(mean_vector, object_dict, extra_sourc
             variance_derivative = theano.gradient.jacobian(mean_vector, variance_source, disconnected_inputs='ignore').dimshuffle(0, 'x')
             #variance_derivative = replace_nans(variance_derivative)
             if debugger is not None:
-                debugger.add_tensor(variance_derivative, "variance derivative")
+                #debugger.add_tensor(variance_data[variance_source], "{} variance data".format(key), 2)
+                debugger.add_tensor(variance_derivative, "{} variance derivative".format(key), 2)
             source_derivatives[variance_derivative] = variance_data[variance_source]
     if extra_sources is not None:
         source_derivatives.update(extra_sources)

@@ -1,4 +1,5 @@
 from dynamics import MyRobotDynamics
+import random
 import theano
 import logging
 logging.getLogger().setLevel(logging.DEBUG)
@@ -8,5 +9,7 @@ dynamics.controllers["left_cim"].set_percent_vbus(1)
 dynamics.controllers["right_cim"].set_percent_vbus(-1)
 
 for _ in range(200):
+    #dynamics.controllers["left_cim"].set_percent_vbus(random.uniform(-1, 1))
+    #dynamics.controllers["right_cim"].set_percent_vbus(random.uniform(-1, 1))
     dynamics.simulation_update(.1)
     print(dynamics.get_state())

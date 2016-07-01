@@ -1,3 +1,4 @@
+import int_dynamics.dynamics.components.actuators
 from int_dynamics import dynamics
 
 
@@ -6,7 +7,7 @@ class MyRobotDynamics(dynamics.DynamicsEngine):
     SINK_TO_NT = True
 
     def build_loads(self):
-        shooter_motor = dynamics.CIMMotor()
+        shooter_motor = int_dynamics.dynamics.components.actuators.CIMMotor()
         shooter_gearbox = dynamics.GearBox([shooter_motor], 1, 0)
         shooter_wheel = dynamics.SimpleWheels(shooter_gearbox, 4)
         self.shooter_load = dynamics.OneDimensionalLoad([shooter_wheel], 1)

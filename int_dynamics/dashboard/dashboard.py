@@ -30,18 +30,16 @@ streamer.subscribe("127.0.0.1", 5804, "estimation", updates_per_sec=SAMPLES_PER_
 
 def update():
     sim_data = streamer.get_data("simulation")
-    if "loads" not in sim_data:
-        return
-    pos_data = sim_data["loads"]["drivetrain"]
-    sim_circle.data_source.data['x'] = [pos_data["position"][0], pos_data["velocity"][0]]
-    sim_circle.data_source.data['y'] = [pos_data["position"][1], pos_data["velocity"][1]]
+    if "loads" in sim_data:
+        pos_data = sim_data["loads"]["drivetrain"]
+        sim_circle.data_source.data['x'] = [pos_data["position"][0], pos_data["velocity"][0]]
+        sim_circle.data_source.data['y'] = [pos_data["position"][1], pos_data["velocity"][1]]
 
     est_data = streamer.get_data("estimation")
-    if "loads" not in est_data:
-        return
-    pos_data = est_data["loads"]["drivetrain"]
-    est_circle.data_source.data['x'] = [pos_data["position"][0], pos_data["velocity"][0]]
-    est_circle.data_source.data['y'] = [pos_data["position"][1], pos_data["velocity"][1]]
+    if "loads" in est_data:
+        pos_data = est_data["loads"]["drivetrain"]
+        est_circle.data_source.data['x'] = [pos_data["position"][0], pos_data["velocity"][0]]
+        est_circle.data_source.data['y'] = [pos_data["position"][1], pos_data["velocity"][1]]
     #update_plots(stream_data)
 
 
