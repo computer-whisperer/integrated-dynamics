@@ -26,9 +26,13 @@ class IntegratorBase:
     def build_simulation_tensors(self, root_body):
         self.set_root_body(root_body)
 
-        self.default_state = self.root_body.get_def_variables()
+        default_pose = self.root_body.get_def_pose_vector()
+        default_motion = self.root_body.get_def_motion_vector()
+        self.default_state = np.concatenate([default_pose, default_motion])
         self.state_tensor = theano.shared(self.default_state, theano.config.floatX)
-        self.root_body.set_variables(self.state_tensor)
+        pose_tensor = self.state_tensor[:default_pose.shape[0]]
+        motion_tensor = self.state_tensor[default_motion.shape[0]:]
+        self.root_body.set_variables(pose_tensor, motion_tensor)
         self.root_body.calculate_frames()
         #self.root_body.build_inertia()
         # self.body_combinations = itertools.combinations(range(len(self.bodies)))

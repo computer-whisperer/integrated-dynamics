@@ -279,6 +279,47 @@ class ForceVector(SpatialVector):
         SpatialVector.__init__(self, linear_component, angular_component, frame)
 
 
+class UndefinedMatrix:
+
+    def __init__(self, columns, shape=None):
+        self.columns = columns
+        if shape is None:
+            shape = (len(columns), len(columns[0]))
+        self.shape = shape
+        for column in columns:
+            assert len(column) == self.shape[1]
+
+
+    def elementwise_op(self, other, operation):
+        assert self.shape == other.shape
+        new_columns = []
+        for x in range(self.shape[0]):
+            new_column = []
+            for y in range(self.shape[1]):
+                new_column.append(operation(self.get(x, y), other.get(x, y)))
+            new_columns.append(new_column)
+        return UndefinedMatrix(new_columns, self.shape)
+
+    def __add__(self, other):
+        return self.elementwise_op(other, lambda a, b: a+b)
+
+    def __sub__(self, other):
+        return self.elementwise_op(other, lambda a, b: a-b)
+
+    def transpose(self):
+        new_columns = []
+        for x in range(self.shape[0]):
+            new_column = []
+            for y in range(self.shape[1]):
+                new_column.append(operation(self.get(x, y), other.get(x, y)))
+            new_columns.append(new_column)
+        return UndefinedMatrix(new_columns, self.shape)
+
+    def get(self, x, y):
+        return self.columns[x][y]
+
+
+
 class Matrix3X3:
 
     def __init__(self, col_1, col_2, col_3):

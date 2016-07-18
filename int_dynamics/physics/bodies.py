@@ -54,53 +54,84 @@ class Body:
             result.extend(child["body"].get_all_children())
         return result
 
-    def get_def_variables(self):
-        default_states = []
+    def get_def_pose_vector(self):
+        default_pose = []
         for child in self.fixed_children:
-            default_states.append(child["body"].get_def_variables())
+            default_pose.append(child["body"].get_def_pose_vector())
         for child in self.free_children:
-            default_states.append(child["pose"].get_def_variables())
-            default_states.append(child["motion"].get_def_variables())
-            default_states.append(child["body"].get_def_variables())
+            default_pose.append(child["pose"].get_def_variables())
+            default_pose.append(child["body"].get_def_pose_vector())
         for child in self.articulated_children:
-            default_states.append(child["joint_position"].get_def_variables())
-            default_states.append(child["joint_motion"].get_def_variables())
-            default_states.append(child["body"].get_def_variables())
-        if len(default_states) > 0:
-            return np.concatenate(default_states)
+            default_pose.append(child["joint_position"].get_def_variables())
+            default_pose.append(child["body"].get_def_pose_vector())
+
+        if len(default_pose) > 0:
+            return np.concatenate(default_pose)
         else:
             return np.array([])
 
-    def set_variables(self, state_vector):
-        i = 0
+    def get_def_motion_vector(self):
+        default_motion = []
         for child in self.fixed_children:
-            state_len = child["body"].get_def_variables().shape[0]
-            child["body"].set_variables(state_vector[i:i + state_len])
-            i += state_len
+            default_motion.append(child["body"].get_def_motion_vector())
         for child in self.free_children:
-            pos_size = child["pose"].get_def_variables().shape[0]
-            child["pose"].set_variables(state_vector[i:i+pos_size])
-            i += pos_size
+            default_motion.append(child["motion"].get_def_variables())
+            default_motion.append(child["body"].get_def_motion_vector())
+        for child in self.articulated_children:
+            default_motion.append(child["joint_motion"].get_def_variables())
+            default_motion.append(child["body"].get_def_motion_vector())
+
+        if len(default_motion) > 0:
+            return np.concatenate(default_motion)
+        else:
+            return np.array([])
+
+
+    def set_variables(self, pose_state_vector, motion_state_vector):
+        """
+        Sets the values of all position and velocity values.
+        :param state_vector: A theano vector of position variables to set.
+        :param vel_vector: A theano vector of velocity variables to set.
+        """
+        pose_i = 0
+        motion_i = 0
+        for child in self.fixed_children:
+            def_pose_state = child["body"].get_def_pose_vector()
+            def_motion_state = child["body"].get_def_motion_vector()
+            child["body"].set_variables(pose_state_vector[pose_i:pose_i + def_pose_state.shape[0]],
+                                        motion_state_vector[motion_i:motion_i + def_motion_state.shape[0]])
+            pose_i += def_pose_state.shape[0]
+            motion_i += def_motion_state.shape[0]
+
+        for child in self.free_children:
+            pose_size = child["pose"].get_def_variables().shape[0]
+            child["pose"].set_variables(pose_state_vector[pose_i:pose_i+pose_size])
+            pose_i += pose_size
 
             motion_size = child["motion"].get_def_variables().shape[0]
-            child["motion"].set_variables(state_vector[i:i+motion_size])
-            i += motion_size
+            child["motion"].set_variables(motion_state_vector[motion_i:motion_i+motion_size])
+            motion_i += motion_size
 
-            state_len = child["body"].get_def_variables().shape[0]
-            child["body"].set_variables(state_vector[i:i + state_len])
-            i += state_len
+            def_pose_state = child["body"].get_def_pose_vector()
+            def_motion_state = child["body"].get_def_motion_vector()
+            child["body"].set_variables(pose_state_vector[pose_i:pose_i + def_pose_state.shape[0]],
+                                        motion_state_vector[motion_i:motion_i + def_motion_state.shape[0]])
+            pose_i += def_pose_state.shape[0]
+            motion_i += def_motion_state.shape[0]
+
         for child in self.articulated_children:
-            pos_size = child["joint_pos"].get_def_variables().shape[0]
-            child["joint_pos"].set_variables(state_vector[i:i+pos_size])
-            i += pos_size
+            pose_size = child["joint_pos"].get_def_variables().shape[0]
+            child["joint_pos"].set_variables(pose_state_vector[pose_i:pose_i+pose_size])
+            pose_i += pose_size
 
             motion_size = child["joint_motion"].get_def_variables().shape[0]
-            child["joint_motion"].set_variables(state_vector[i:i+motion_size])
-            i += motion_size
+            child["joint_motion"].set_variables(motion_state_vector[motion_i:motion_i+motion_size])
+            motion_i += motion_size
 
-            state_len = child["body"].get_def_variables().shape[0]
-            child["body"].set_variables(state_vector[i:i + state_len])
-            i += state_len
+            def_pose_state = child["body"].get_def_pose_vector()
+            def_motion_state = child["body"].get_def_motion_vector()
+            child["body"].set_variables(pose_state_vector[pose_i:pose_i + def_pose_state.shape[0]],
+                                        motion_state_vector[motion_i:motion_i + def_motion_state.shape[0]])
 
     def calculate_frames(self):
         for child in self.fixed_children:
@@ -116,6 +147,32 @@ class Body:
 
     def get_rigid_body_inertia(self):
         raise NotImplementedError()
+
+    def build_local_inertia(self):
+        self.local_inertia = self.get_rigid_body_inertia()
+        for child in self.free_children + self.fixed_children + self.articulated_children:
+            child["body"].build_local_inertia()
+        for child in self.fixed_children:
+            self.local_inertia += child["body"].local_inertia
+
+    def get_inverse_dynamics(self, accel_vector, root_accel):
+        """
+        Recursively compute the inverse dynamics problem using RNEA given the current body's pose and motion, and the
+        provided acceleration vector.
+        :param accel_vector: A theano tensor corresponding to the acceleration values to calculate applied force from.
+        These acceleration values correspond to velocity variables given in the same order from get_def_motion_vector().
+        :param local_accel: The acceleration of this body in root-relative coordinates.
+        :return: A vector of the same size as accel_vector, but with force values corresponding to the acceleration values.
+        """
+        # First thing is to build motion vectors from accel_vector
+        i = 0
+        child_force_vectors = []
+        for child in self.fixed_children:
+            def_motion_vector = child["body"].get_def_motion_vector()
+            child_force_vectors.append(child["body"].get_inverse_dynamics(accel_vector[i, i+def_motion_vector], root_accel))
+
+
+
 
     def build_inertia_and_bias(self):
         self.articulated_inertia = self.get_rigid_body_inertia()
