@@ -242,16 +242,16 @@ class PoseVector(SpatialVector):
     def transform_inertia(self, inertia):
         if Frame.assert_frames:
             assert self.end_frame is inertia.frame
-        mat_1 = Matrix3X3(
-            self.angular_component.sandwich_mul(inertia.inertia_matrix.col_1),
-            self.angular_component.sandwich_mul(inertia.inertia_matrix.col_2),
-            self.angular_component.sandwich_mul(inertia.inertia_matrix.col_3)
-        )
-        mat_2 = Matrix3X3(
-            self.angular_component.sandwich_mul(mat_1.row_1),
-            self.angular_component.sandwich_mul(mat_1.row_2),
-            self.angular_component.sandwich_mul(mat_1.row_3)
-        )
+        mat_1 = ExplicitMatrix([
+            self.angular_component.sandwich_mul(XYZVector(*inertia.inertia_matrix.columns[0])),
+            self.angular_component.sandwich_mul(XYZVector(*inertia.inertia_matrix.columns[1])),
+            self.angular_component.sandwich_mul(XYZVector(*inertia.inertia_matrix.columns[2]))
+        ])
+        mat_2 = ExplicitMatrix([
+            self.angular_component.sandwich_mul(XYZVector(*mat_1.columns[0])),
+            self.angular_component.sandwich_mul(XYZVector(*mat_1.columns[1])),
+            self.angular_component.sandwich_mul(XYZVector(*mat_1.columns[2]))
+        ])
         new_com = self.angular_component.sandwich_mul(inertia.com) + self.linear_component
         return InertiaMoment(mat_2, new_com, inertia.mass, self.frame)
 
@@ -279,7 +279,7 @@ class ForceVector(SpatialVector):
         SpatialVector.__init__(self, linear_component, angular_component, frame)
 
 
-class UndefinedMatrix:
+class ExplicitMatrix:
 
     def __init__(self, columns, shape=None):
         self.columns = columns
@@ -289,7 +289,6 @@ class UndefinedMatrix:
         for column in columns:
             assert len(column) == self.shape[1]
 
-
     def elementwise_op(self, other, operation):
         assert self.shape == other.shape
         new_columns = []
@@ -298,7 +297,7 @@ class UndefinedMatrix:
             for y in range(self.shape[1]):
                 new_column.append(operation(self.get(x, y), other.get(x, y)))
             new_columns.append(new_column)
-        return UndefinedMatrix(new_columns, self.shape)
+        return ExplicitMatrix(new_columns, self.shape)
 
     def __add__(self, other):
         return self.elementwise_op(other, lambda a, b: a+b)
@@ -311,48 +310,40 @@ class UndefinedMatrix:
         for x in range(self.shape[0]):
             new_column = []
             for y in range(self.shape[1]):
-                new_column.append(operation(self.get(x, y), other.get(x, y)))
+                new_column.append(self.get(y, x))
             new_columns.append(new_column)
-        return UndefinedMatrix(new_columns, self.shape)
-
-    def get(self, x, y):
-        return self.columns[x][y]
-
-
-
-class Matrix3X3:
-
-    def __init__(self, col_1, col_2, col_3):
-        self.col_1 = col_1
-        self.col_2 = col_2
-        self.col_3 = col_3
-        self.row_1 = XYZVector(col_1.b, col_2.b, col_3.b)
-        self.row_2 = XYZVector(col_1.c, col_2.c, col_3.c)
-        self.row_3 = XYZVector(col_1.d, col_2.d, col_3.d)
-
-    def __add__(self, other):
-        return Matrix3X3(self.col_1+other.col_1, self.col_2+other.col_2, self.col_3+other.col_3)
-
-    def __sub__(self, other):
-        return Matrix3X3(self.col_1-other.col_1, self.col_2-other.col_2, self.col_3-other.col_3)
-
-    def transpose(self):
-        return Matrix3X3(self.row_1, self.row_2, self.row_3)
+        return ExplicitMatrix(new_columns, self.shape)
 
     def determinant(self):
-        determinant_pt_1 = self.col_1.b*self.col_2.c*self.col_3.d + \
-                           self.col_2.b*self.col_3.c*self.col_1.d + \
-                           self.col_3.b*self.col_1.c*self.col_2.d
-        determinant_pt_2 = self.col_3.b*self.col_1.c*self.col_2.d + \
-                           self.col_1.b*self.col_3.c*self.col_2.d + \
-                           self.col_2.b*self.col_1.c*self.col_3.d
-        return determinant_pt_1 - determinant_pt_2
+        assert self.shape[0] == self.shape[1]
+        if self.shape[0] == 2:
+            return self.columns[0][0]*self.columns[1][1] - self.columns[1][0]*self.columns[0][1]
+        multiplier = 1
+        determinant = 0
+        for x in range(self.shape[0]):
+            if self.get(x, 0) != 0:
+                new_cols = []
+                for col in range(self.shape[0]):
+                    if col != x:
+                        new_cols.append(self.columns[col][1:])
+                minor = ExplicitMatrix(new_cols)
+                determinant += minor.determinant()*self.get(x, 0)*multiplier
+            multiplier *= -1
+        return determinant
 
     def dot(self, other):
-        x = self.row_1.dot(other)
-        y = self.row_2.dot(other)
-        z = self.row_3.dot(other)
-        return XYZVector(x, y, z)
+        assert other.shape[1] == self.shape[0]
+        new_shape = (other.shape[0], self.shape[1])
+        new_columns = []
+        for x in range(new_shape[0]):
+            new_column = []
+            for y in range(new_shape[1]):
+                cell = 0
+                for i in range(self.shape[0]):
+                    cell += self.get(i, y) * other.get(x, i)
+                new_column.append(cell)
+            new_columns.append(new_column)
+        return ExplicitMatrix(new_columns, new_shape)
 
     def solve(self, vector):
         """
@@ -360,24 +351,34 @@ class Matrix3X3:
         :param vector:
         :return: the solution to the equation
         """
-        x_mat = Matrix3X3(vector, self.col_2, self.col_3)
-        y_mat = Matrix3X3(self.col_1, vector, self.col_3)
-        z_mat = Matrix3X3(self.col_1, self.col_2, vector)
-
         det = self.determinant()
+        result = []
+        for x in range(self.shape[0]):
+            new_columns = []
+            for x2 in range(self.shape[0]):
+                if x == x2:
+                    new_columns.append(vector.columns[0])
+                else:
+                    new_columns.append(self.columns[x2])
+            minor_det = ExplicitMatrix(new_columns).determinant()
+            result.append(minor_det/det)
 
-        x = x_mat.determinant()/det
-        y = y_mat.determinant()/det
-        z = z_mat.determinant()/det
+        return ExplicitMatrix([result])
 
-        return XYZVector(x, y, z)
+    def get(self, x, y):
+        return self.columns[x][y]
+
+    def __len__(self):
+        return self.shape[0]
+
+    def __getitem__(self, item):
+        return self.columns[item]
 
 
 def SymmetricMatrix3X3(m_xx, m_xy, m_xz, m_yy, m_yz, m_zz):
-    x_col = XYZVector(m_xx, m_xy, m_xz)
-    y_col = XYZVector(m_xy, m_yy, m_yz)
-    z_col = XYZVector(m_xz, m_yz, m_zz)
-    return Matrix3X3(x_col, y_col, z_col)
+    return ExplicitMatrix([[m_xx, m_xy, m_xz],
+                           [m_xy, m_yy, m_xz],
+                           [m_xz, m_yz, m_zz]])
 
 
 def DiagonalMatrix3X3(m_xx, m_yy, m_zz):
