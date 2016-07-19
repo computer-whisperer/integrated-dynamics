@@ -155,7 +155,7 @@ class Body:
         for child in self.fixed_children:
             self.local_inertia += child["body"].local_inertia
 
-    def get_inverse_dynamics(self, accel_vector, root_accel):
+    def get_inverse_dynamics(self, accel_vector, frame_accel):
         """
         Recursively compute the inverse dynamics problem using RNEA given the current body's pose and motion, and the
         provided acceleration vector.
@@ -169,8 +169,20 @@ class Body:
         child_force_vectors = []
         for child in self.fixed_children:
             def_motion_vector = child["body"].get_def_motion_vector()
-            child_force_vectors.append(child["body"].get_inverse_dynamics(accel_vector[i, i+def_motion_vector], root_accel))
+            child_force_vectors.append(child["body"].get_inverse_dynamics(accel_vector[i, i+def_motion_vector.shape[0]], frame_accel))
+            i += def_motion_vector.shape[0]
 
+        for child in self.free_children:
+            child_accel = MotionVector(variable=child["motion"].variables, frame=self.frame)
+            child_def_vars = child_accel.get_def_variables()
+            child_accel.set_variables(accel_vector[i, i+child_def_vars.shape[0]])
+            i += child_def_vars.shape[0]
+
+            root_child_accel = self.frame.root_pose.transform_motion(child_accel)+frame_accel
+
+            def_motion_vector = child["body"].get_def_motion_vector()
+            child_force_vectors.append(child["body"].get_inverse_dynamics(accel_vector[i, i+def_motion_vector.shape[0]], root_child_accel))
+            i += def_motion_vector.shape[0]
 
 
 

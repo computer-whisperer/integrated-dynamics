@@ -19,43 +19,14 @@ class Frame:
         self.root_pose = root_pose
         self.root_motion = root_motion
 
-    def set_parent_frame(self, frame, relative_pose=None, relative_motion=None):
+    def set_parent_frame(self, frame, relative_pose, relative_motion):
         self.parent_frame = frame
-        if relative_pose is not None:
-            if Frame.assert_frames:
-                assert frame is relative_pose.frame and frame is relative_motion.frame
-            self.relative_pose = relative_pose
-            self.relative_motion = relative_motion
-            self.root_pose = frame.root_pose.transform_pose(relative_pose)
-            self.root_motion = frame.root_pose.transform_motion(relative_motion) + frame.root_motion
-        else:
-            transpose_pose = frame.root_pose.transpose()
-            self.parent_pose = transpose_pose.transform_pose(self.root_pose)
-            self.parent_pose = transpose_pose.transform_motion(self.root_motion)
-            self.parent_motion = motion
-            self.root_pose = frame.root_pose.transform_pose(pose)
-            self.root_pose.end_frame = self
-            self.root_motion = frame.root_pose.transform_motion(motion) + frame.root_motion
-            self.parent_frame = frame
-
-    def set_parent_frame_root(self, frame, pose, motion):
         if Frame.assert_frames:
-            assert frame is pose.frame and frame is motion.frame
-        self.parent_frame = frame
-        self.parent_pose = pose
-        self.parent_motion = motion
-        self.root_pose = frame.root_pose.transform_pose(pose)
-        self.root_pose.end_frame = self
-        self.root_motion = frame.root_pose.transform_motion(motion) + frame.root_motion
-        self.parent_frame = frame
-
-    def update_root_pose_motion(self, new_parent_frame, root_pose, root_motion):
-        """
-        Create an updated frame with the direct, updated root pose and motion.
-        :param root_pose:
-        :param root_motion:
-        :return:
-        """
+            assert frame is relative_pose.frame and frame is relative_motion.frame
+        self.relative_pose = relative_pose
+        self.relative_motion = relative_motion
+        self.root_pose = frame.root_pose.transform_pose(relative_pose)
+        self.root_motion = frame.root_pose.transform_motion(relative_motion) + frame.root_motion
 
 
 class Quaternion:
