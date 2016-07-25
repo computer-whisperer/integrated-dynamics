@@ -1,4 +1,4 @@
-import math
+import time
 
 from numpy.testing import assert_almost_equal
 
@@ -59,31 +59,92 @@ def test_inverse_dynamics_articulated_2d():
         link_1,
         pose=PoseVector(XYVector(0, 5)),
         joint_base=PoseVector(XYVector(0, 0)),
-        joint_pose=PoseVector(XYVector(0, 0, variable=True), Angle(0, variable=True, use_constant=True)),
-        joint_motion=MotionVector(XYVector(0, 0, variable=True), Angle(0, variable=True, use_constant=False))
+        joint_pose=PoseVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=True)),
+        joint_motion=MotionVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=False))
     )
-    #link_1.add_child(
-    #    link_2,
-    #    pose=PoseVector(XYVector(0, 5)),
-    #    joint_base=PoseVector(XYVector(0, 5)),
-    #    joint_pose=PoseVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=True)),
-    #    joint_motion=MotionVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=False))
-    #)
-    #link_2.add_child(
-    #    link_3,
-    #    pose=PoseVector(XYVector(0, 5)),
-    #    joint_base=PoseVector(XYVector(0, 5)),
-    #    joint_pose=PoseVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=True)),
-    #    joint_motion=MotionVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=False))
-    #)
+    link_1.add_child(
+        link_2,
+        pose=PoseVector(XYVector(0, 5)),
+        joint_base=PoseVector(XYVector(0, 5)),
+        joint_pose=PoseVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=True)),
+        joint_motion=MotionVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=False))
+    )
+    link_2.add_child(
+        link_3,
+        pose=PoseVector(XYVector(0, 5)),
+        joint_base=PoseVector(XYVector(0, 5)),
+        joint_pose=PoseVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=True)),
+        joint_motion=MotionVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=False))
+    )
 
     integrator = EulerIntegrator()
     integrator.build_simulation_tensors(world)
-    accel_vector = ExplicitMatrix([[-5, 0, 0]])
+    accel_vector = ExplicitMatrix([[0, 0, 0]])
     force_vector, root_forces = world.get_inverse_dynamics(accel_vector, MotionVector(frame=world.frame))
-    force_vector_ndarray = force_vector.get_ndarray()
-    print(force_vector_ndarray)
+    force_vector_array = force_vector.get_symbolic_array()
+    func = build_symbolic_function(force_vector_array)
+    print(func())
+    print(count_nodes(force_vector_array))
 
+
+def test_inverse_dynamics_articulated_3d():
+    # five bodies, essentially a tank-drive robot
+    world = WorldBody()
+
+    chassis = CubeBody(10, 2, 10, 20)
+    wheel_1 = CubeBody(1, 10, 10, 1)
+    wheel_2 = CubeBody(1, 10, 10, 1)
+    wheel_3 = CubeBody(1, 10, 10, 1)
+    wheel_4 = CubeBody(1, 10, 10, 1)
+
+    world.add_child(
+        chassis,
+        pose=PoseVector(XYZVector(0, 0)),
+        joint_base=PoseVector(XYZVector(0, 0)),
+        joint_pose=PoseVector(XYZVector(0, 0, 0, variable=True), Versor(XYZVector(), 0, variable=True)),
+        joint_motion=MotionVector(XYZVector(0, 0, 0, variable=True), XYZVector(0, 0, 0, variable=True))
+    )
+
+    chassis.add_child(
+        wheel_1,
+        pose=PoseVector(XYVector(0, 0, 0)),
+        joint_base=PoseVector(XYZVector(-5, 0, 5)),
+        joint_pose=PoseVector(XYZVector(0, 0, 0, variable=False), Quaternion(0, 0, 0, 0, variables="ad")),
+        joint_motion=MotionVector(XYZVector(0, 0, 0, variable=False), Quaternion(0, 0, 0, 0, variables="d"))
+    )
+    chassis.add_child(
+        wheel_2,
+        pose=PoseVector(XYVector(0, 0, 0)),
+        joint_base=PoseVector(XYZVector(5, 0, 5)),
+        joint_pose=PoseVector(XYZVector(0, 0, 0, variable=False), Quaternion(0, 0, 0, 0, variables="ad")),
+        joint_motion=MotionVector(XYZVector(0, 0, 0, variable=False), Quaternion(0, 0, 0, 0, variables="d"))
+    )
+    chassis.add_child(
+        wheel_3,
+        pose=PoseVector(XYVector(0, 0, 0)),
+        joint_base=PoseVector(XYZVector(5, 0, -5)),
+        joint_pose=PoseVector(XYZVector(0, 0, 0, variable=False), Quaternion(0, 0, 0, 0, variables="ad")),
+        joint_motion=MotionVector(XYZVector(0, 0, 0, variable=False), Quaternion(0, 0, 0, 0, variables="d"))
+    )
+    chassis.add_child(
+        wheel_4,
+        pose=PoseVector(XYVector(0, 0, 0)),
+        joint_base=PoseVector(XYZVector(-5, 0, -5)),
+        joint_pose=PoseVector(XYZVector(0, 0, 0, variable=False), Quaternion(0, 0, 0, 0, variables="ad")),
+        joint_motion=MotionVector(XYZVector(0, 0, 0, variable=False), Quaternion(0, 0, 0, 0, variables="d"))
+    )
+
+
+    integrator = EulerIntegrator()
+    integrator.build_simulation_tensors(world)
+    accel_vector = ExplicitMatrix([[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]])
+    force_vector, root_forces = world.get_inverse_dynamics(accel_vector, MotionVector(frame=world.frame))
+    force_vector_array = force_vector.get_symbolic_array()
+    func = build_symbolic_function(force_vector_array)
+    start = time.time()
+    print(func())
+    print("took {}".format(time.time() - start))
+    print(count_nodes(force_vector_array))
 
 
 

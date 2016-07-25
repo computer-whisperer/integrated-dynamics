@@ -1,9 +1,5 @@
-import numpy as np
-import itertools
 from .types import *
-
-import theano
-import theano.tensor as T
+from .symbolic_types import *
 
 
 class IntegratorBase:
@@ -30,7 +26,7 @@ class IntegratorBase:
         default_pose = self.root_body.get_def_pose_vector()
         default_motion = self.root_body.get_def_motion_vector()
         self.default_state = np.concatenate([default_pose, default_motion])
-        self.state_tensor = theano.shared(self.default_state, theano.config.floatX)
+        self.state_tensor = symbolic_types.VariableNode(self.default_state)
         self.state_explicit_matrix = ExplicitMatrix([self.state_tensor], (1, self.default_state.shape[0]))
         pose_tensor, motion_tensor = self.state_explicit_matrix.vsplit(default_pose.shape[0])
         self.root_body.set_variables(pose_tensor, motion_tensor)

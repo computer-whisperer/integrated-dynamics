@@ -1,6 +1,5 @@
-import theano
-import theano.tensor as T
 import numpy as np
+from int_dynamics.physics import symbolic_types
 
 
 class Frame:
@@ -115,10 +114,10 @@ class Quaternion:
         return Quaternion(self.a, -self.b, -self.c, -self.d)
 
     def get_magnitude(self):
-        return T.sqrt(T.sum(*[comp**2 for comp in self.get_components()]))
+        return symbolic_types.sqrt(sum([comp**2 for comp in self.get_components()]))
 
     def get_array(self):
-        return T.stack(self.get_components())
+        return symbolic_types.stack(self.get_components())
 
     def get_ndarray(self):
         return self.get_array().eval()
@@ -137,12 +136,8 @@ def XYVector(x=0, y=0, variable=False):
 
 def Angle(theta=0, variable=False, use_constant=False):
     if use_constant:
-        if isinstance(theta, T.TensorType):
-            sin = T.sin(theta / 2)
-            cos = T.cos(theta / 2)
-        else:
-            sin = np.sin(theta / 2)
-            cos = np.cos(theta / 2)
+        sin = symbolic_types.sin(theta / 2)
+        cos = symbolic_types.cos(theta / 2)
         return Quaternion(cos, 0, 0, sin, variables="ad" if variable else "")
     else:
         return Quaternion(0, 0, 0, theta, variables="d" if variable else "")
@@ -151,12 +146,8 @@ def Angle(theta=0, variable=False, use_constant=False):
 def Versor(v=None, theta=0, variable=False):
     if v is None:
         v = XYZVector()
-    if isinstance(theta, T.TensorType):
-        sin = T.sin(theta / 2)
-        cos = T.cos(theta / 2)
-    else:
-        sin = np.sin(theta / 2)
-        cos = np.cos(theta / 2)
+    sin = symbolic_types.sin(theta / 2)
+    cos = symbolic_types.cos(theta / 2)
     return Quaternion(cos, sin*v.b, sin*v.c, sin*v.d, variables="abcd" if variable else "")
 
 
@@ -218,7 +209,7 @@ class SpatialVector:
         self.angular_component.set_variables(angular_vals)
 
     def get_array(self):
-        return T.concatenate([self.linear_component.get_array(), self.angular_component.get_array()])
+        return symbolic_types.concatenate([self.linear_component.get_array(), self.angular_component.get_array()])
 
     def get_ndarray(self):
         return self.get_array().eval()
@@ -525,13 +516,11 @@ class ExplicitMatrix:
         else:
             assert False
 
-    def get_theano_array(self):
-        return T.stack([T.stack(column) for column in self.columns], axis=0)
+    def get_symbolic_array(self):
+        return symbolic_types.stack([symbolic_types.stack(column) for column in self.columns], axis=0)
 
     def get_ndarray(self):
-        return self.get_theano_array().eval()
-
-
+        return self.get_symbolic_array().eval()
 
 
 def SymmetricMatrix3X3(m_xx, m_xy, m_xz, m_yy, m_yz, m_zz):
