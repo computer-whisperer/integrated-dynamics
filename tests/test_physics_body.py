@@ -8,7 +8,7 @@ from int_dynamics.physics import *
 def test_body_1():
     world = WorldBody()
     body = CubeBody(1, 1, 1, 1)
-    world.add_free_child(body)
+    world.add_child(body)
     integrator = EulerIntegrator()
     integrator.build_simulation_tensors(world)
     while integrator.get_time() < 10:
@@ -25,11 +25,11 @@ def test_composite_body_positions():
     body_4 = CubeBody(1, 1, 1, 1)
     body_5 = CubeBody(1, 1, 1, 1)
 
-    world.add_free_child(body_1, PoseVector(XYZVector(0, 4, 0)), MotionVector(angular_component=XYZVector(math.pi, 0, 0)))
-    body_1.add_fixed_child(body_2, PoseVector(XYZVector(3, 0, 0), Versor(XYZVector(0, 1, 0), math.pi / 2)))
-    body_2.add_fixed_child(body_3, PoseVector(XYZVector(0, 0, 2)))
-    body_2.add_fixed_child(body_4, PoseVector(XYZVector(2, 0, 0), Versor(XYZVector(1, 0, 0), math.pi / 4)))
-    body_4.add_fixed_child(body_5, PoseVector(XYZVector(0, 5, 0)))
+    world.add_child(body_1, joint_pose=PoseVector(XYZVector(0, 4, 0)), joint_motion=MotionVector(angular_component=XYZVector(math.pi, 0, 0)))
+    body_1.add_child(body_2, joint_pose=PoseVector(XYZVector(3, 0, 0), Versor(XYZVector(0, 1, 0), math.pi / 2)))
+    body_2.add_child(body_3, joint_pose=PoseVector(XYZVector(0, 0, 2)))
+    body_2.add_child(body_4, joint_pose=PoseVector(XYZVector(2, 0, 0), Versor(XYZVector(1, 0, 0), math.pi / 4)))
+    body_4.add_child(body_5, joint_pose=PoseVector(XYZVector(0, 5, 0)))
 
     integrator = EulerIntegrator()
     integrator.build_simulation_tensors(world)
@@ -45,5 +45,49 @@ def test_composite_body_positions():
     assert_almost_equal(body_3.frame.root_motion.get_ndarray(), [0, 0, 0, 0, 0, math.pi, 0, 0])
     assert_almost_equal(body_4.frame.root_motion.get_ndarray(), [0, 0, 0, 0, 0, math.pi, 0, 0])
     assert_almost_equal(body_5.frame.root_motion.get_ndarray(), [0, 0, 0, 0, 0, math.pi, 0, 0])
+
+
+def test_inverse_dynamics_articulated_2d():
+    # Three links, essentially a 2D triple inverted pendelum
+    world = WorldBody()
+
+    link_1 = CubeBody(1, 10, 1, 1)
+    link_2 = CubeBody(1, 10, 1, 1)
+    link_3 = CubeBody(1, 10, 1, 1)
+
+    world.add_child(
+        link_1,
+        pose=PoseVector(XYVector(0, 5)),
+        joint_base=PoseVector(XYVector(0, 0)),
+        joint_pose=PoseVector(XYVector(0, 0, variable=True), Angle(0, variable=True, use_constant=True)),
+        joint_motion=MotionVector(XYVector(0, 0, variable=True), Angle(0, variable=True, use_constant=False))
+    )
+    #link_1.add_child(
+    #    link_2,
+    #    pose=PoseVector(XYVector(0, 5)),
+    #    joint_base=PoseVector(XYVector(0, 5)),
+    #    joint_pose=PoseVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=True)),
+    #    joint_motion=MotionVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=False))
+    #)
+    #link_2.add_child(
+    #    link_3,
+    #    pose=PoseVector(XYVector(0, 5)),
+    #    joint_base=PoseVector(XYVector(0, 5)),
+    #    joint_pose=PoseVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=True)),
+    #    joint_motion=MotionVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=False))
+    #)
+
+    integrator = EulerIntegrator()
+    integrator.build_simulation_tensors(world)
+    accel_vector = ExplicitMatrix([[-5, 0, 0]])
+    force_vector, root_forces = world.get_inverse_dynamics(accel_vector, MotionVector(frame=world.frame))
+    force_vector_ndarray = force_vector.get_ndarray()
+    print(force_vector_ndarray)
+
+
+
+
+
+
 
 

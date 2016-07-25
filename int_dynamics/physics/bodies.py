@@ -4,11 +4,10 @@ from .types import *
 class Body:
 
     def __init__(self, body_mass, name=None):
-        self.fixed_children = []
-        self.free_children = []
-        self.articulated_children = []
+        self.children = []
         if name is None:
             name = self.__class__.__name__
+        self.name = name
         self.frame = Frame(name=name)
 
         self.root_body = None
@@ -19,50 +18,59 @@ class Body:
         self.forces = []
         self.net_force = None
 
-    def add_free_child(self, body, pose=None, motion=None):
-        if pose is None:
-            pose = PoseVector(variable=True)
-        if motion is None:
-            motion = MotionVector(variable=True)
-        pose.frame = self.frame
-        pose.end_frame = body.frame
-        motion.frame = self.frame
-        self.free_children.append(({"body": body, "pose": pose, "motion": motion}))
+    def add_child(self, body, pose=None, joint_base=None, joint_pose=None, joint_motion=None):
+        """
+        Add an articulated child to this body.
+        The type of joint is controlled by the variables set in joint_motion.
+        Each joint has four frames associated with it: parent body, joint base, joint end, and child body
 
-    def add_fixed_child(self, body, pose=None):
+        :param body: The body instance to add.
+        :param pose: The pose of the child relative to the joint.
+        :param joint_base: The pose of the joint base in local frame coordinates.(optional)
+        :param joint_pose: The initial pose of the joint, with variables corresponding to degrees of freedom (optional).
+        :param joint_motion: The initial motion of this joint, with variables corresponding to degrees of freedom (optional).
+        """
+
         if pose is None:
             pose = PoseVector(variable=False)
-        pose.frame = self.frame
-        pose.end_frame = body.frame
-        self.fixed_children.append(({"body": body, "pose": pose}))
-
-    def add_articulated_child(self, body, body_pose, joint_axis, joint_position=None, joint_motion=None):
-        if joint_position is None:
-            joint_position = Quaternion(0, 0, 0, 0, variables="a")
+        if joint_base is None:
+            joint_base = PoseVector(variable=False)
+        if joint_pose is None:
+            joint_pose = PoseVector(variable=True)
         if joint_motion is None:
-            joint_motion = Quaternion(0, 0, 0, 0, variables="a")
-        joint_axis.frame = self.frame
-        body_pose.frame = self.frame
-        body_pose.end_frame = body.frame
-        joint_axis.frame = self.frame
-        self.articulated_children.append({"body": body, "pose": body_pose, "joint_axis": joint_axis, "joint_position": joint_position, "joint_motion": joint_motion})
+            joint_motion = MotionVector(variable=True)
+
+        joint_frame_base = Frame(name="joint_base_{}_{}".format(self.name, body.name))
+        joint_frame_end = Frame(name="joint_end_{}_{}".format(self.name, body.name))
+
+        joint_base.frame = self.frame
+        joint_base.end_frame = joint_frame_base
+        joint_pose.frame = joint_frame_base
+        joint_pose.end_frame = joint_frame_end
+        joint_motion.frame = joint_frame_base
+        pose.frame = joint_frame_end
+        pose.end_frame = body.frame
+        self.children.append({
+            "body": body,
+            "pose": pose,
+            "joint_base": joint_base,
+            "joint_pose": joint_pose,
+            "joint_motion": joint_motion,
+            "joint_frame_base": joint_frame_base,
+            "joint_frame_end": joint_frame_end
+        })
 
     def get_all_children(self):
         result = []
-        for child in self.fixed_children + self.free_children:
+        for child in self.children:
             result.append(child["body"])
             result.extend(child["body"].get_all_children())
         return result
 
     def get_def_pose_vector(self):
         default_pose = []
-        for child in self.fixed_children:
-            default_pose.append(child["body"].get_def_pose_vector())
-        for child in self.free_children:
-            default_pose.append(child["pose"].get_def_variables())
-            default_pose.append(child["body"].get_def_pose_vector())
-        for child in self.articulated_children:
-            default_pose.append(child["joint_position"].get_def_variables())
+        for child in self.children:
+            default_pose.append(child["joint_pose"].get_def_variables())
             default_pose.append(child["body"].get_def_pose_vector())
 
         if len(default_pose) > 0:
@@ -72,12 +80,7 @@ class Body:
 
     def get_def_motion_vector(self):
         default_motion = []
-        for child in self.fixed_children:
-            default_motion.append(child["body"].get_def_motion_vector())
-        for child in self.free_children:
-            default_motion.append(child["motion"].get_def_variables())
-            default_motion.append(child["body"].get_def_motion_vector())
-        for child in self.articulated_children:
+        for child in self.children:
             default_motion.append(child["joint_motion"].get_def_variables())
             default_motion.append(child["body"].get_def_motion_vector())
 
@@ -86,104 +89,107 @@ class Body:
         else:
             return np.array([])
 
-
     def set_variables(self, pose_state_vector, motion_state_vector):
         """
         Sets the values of all position and velocity values.
         :param state_vector: A theano vector of position variables to set.
         :param vel_vector: A theano vector of velocity variables to set.
         """
-        pose_i = 0
-        motion_i = 0
-        for child in self.fixed_children:
-            def_pose_state = child["body"].get_def_pose_vector()
-            def_motion_state = child["body"].get_def_motion_vector()
-            child["body"].set_variables(pose_state_vector[pose_i:pose_i + def_pose_state.shape[0]],
-                                        motion_state_vector[motion_i:motion_i + def_motion_state.shape[0]])
-            pose_i += def_pose_state.shape[0]
-            motion_i += def_motion_state.shape[0]
+        for child in self.children:
+            joint_pose_vector, pose_state_vector = \
+                pose_state_vector.vsplit(child["joint_pose"].get_def_variables().shape[0])
+            child["joint_pose"].set_variables(joint_pose_vector)
 
-        for child in self.free_children:
-            pose_size = child["pose"].get_def_variables().shape[0]
-            child["pose"].set_variables(pose_state_vector[pose_i:pose_i+pose_size])
-            pose_i += pose_size
+            joint_motion_vector, motion_state_vector = \
+                motion_state_vector.vsplit(child["joint_motion"].get_def_variables().shape[0])
+            child["joint_motion"].set_variables(joint_motion_vector)
 
-            motion_size = child["motion"].get_def_variables().shape[0]
-            child["motion"].set_variables(motion_state_vector[motion_i:motion_i+motion_size])
-            motion_i += motion_size
+            rec_pose_vector, pose_state_vector = \
+                pose_state_vector.vsplit(child["body"].get_def_pose_vector().shape[0])
+            rec_motion_vector, motion_state_vector = \
+                motion_state_vector.vsplit(child["body"].get_def_motion_vector().shape[0])
 
-            def_pose_state = child["body"].get_def_pose_vector()
-            def_motion_state = child["body"].get_def_motion_vector()
-            child["body"].set_variables(pose_state_vector[pose_i:pose_i + def_pose_state.shape[0]],
-                                        motion_state_vector[motion_i:motion_i + def_motion_state.shape[0]])
-            pose_i += def_pose_state.shape[0]
-            motion_i += def_motion_state.shape[0]
-
-        for child in self.articulated_children:
-            pose_size = child["joint_pos"].get_def_variables().shape[0]
-            child["joint_pos"].set_variables(pose_state_vector[pose_i:pose_i+pose_size])
-            pose_i += pose_size
-
-            motion_size = child["joint_motion"].get_def_variables().shape[0]
-            child["joint_motion"].set_variables(motion_state_vector[motion_i:motion_i+motion_size])
-            motion_i += motion_size
-
-            def_pose_state = child["body"].get_def_pose_vector()
-            def_motion_state = child["body"].get_def_motion_vector()
-            child["body"].set_variables(pose_state_vector[pose_i:pose_i + def_pose_state.shape[0]],
-                                        motion_state_vector[motion_i:motion_i + def_motion_state.shape[0]])
+            child["body"].set_variables(rec_pose_vector, rec_motion_vector)
 
     def calculate_frames(self):
-        for child in self.fixed_children:
-            child["body"].frame.set_parent_frame(self.frame, child["pose"], MotionVector(frame=self.frame))
+        for child in self.children:
+            child["joint_frame_base"].set_parent_frame(self.frame, child["joint_base"])
+            child["joint_frame_end"].set_parent_frame(child["joint_frame_base"], child["joint_pose"], child["joint_motion"])
+            child["body"].frame.set_parent_frame(child["joint_frame_end"], child["pose"])
             child["body"].calculate_frames()
-        for child in self.free_children:
-            child["body"].frame.set_parent_frame(self.frame, child["pose"], child["motion"])
-            child["body"].calculate_frames()
-        for child in self.articulated_children:
-            joint_rot = Versor(child["joint_axis"], child["joint_position"])
-            child_pose_joint_rel = child[""]
-            #child["body"].root_pose =
+            child["body"].local_inertia = child["body"].get_rigid_body_inertia()
+            child["body"].world_inertia = child["body"].frame.root_pose.transform_inertia(child["body"].local_inertia)
+
 
     def get_rigid_body_inertia(self):
         raise NotImplementedError()
 
-    def build_local_inertia(self):
-        self.local_inertia = self.get_rigid_body_inertia()
-        for child in self.free_children + self.fixed_children + self.articulated_children:
-            child["body"].build_local_inertia()
-        for child in self.fixed_children:
-            self.local_inertia += child["body"].local_inertia
+#    def build_local_inertia(self):
+#        self.local_inertia = self.get_rigid_body_inertia()
+#        for child in self.free_children + self.fixed_children + self.articulated_children:
+#            child["body"].build_local_inertia()
+#        for child in self.fixed_children:
+#            self.local_inertia += child["body"].local_inertia
 
     def get_inverse_dynamics(self, accel_vector, frame_accel):
         """
         Recursively compute the inverse dynamics problem using RNEA given the current body's pose and motion, and the
         provided acceleration vector.
-        :param accel_vector: A theano tensor corresponding to the acceleration values to calculate applied force from.
+        :param accel_vector: An ExplicitMatrix vector corresponding to the acceleration values to calculate applied
+        force from.
         These acceleration values correspond to velocity variables given in the same order from get_def_motion_vector().
         :param local_accel: The acceleration of this body in root-relative coordinates.
-        :return: A vector of the same size as accel_vector, but with force values corresponding to the acceleration values.
+        :returns: An ExplicitMatrix vector of the same size as accel_vector, but with force values corresponding to the acceleration values.
+        :returns: A ForceVector with the sum of all forces applied by child joints, in world-space coordinates.
         """
+        # for debugging
+        full_accel_vector = accel_vector
+
         # First thing is to build motion vectors from accel_vector
-        i = 0
-        child_force_vectors = []
-        for child in self.fixed_children:
-            def_motion_vector = child["body"].get_def_motion_vector()
-            child_force_vectors.append(child["body"].get_inverse_dynamics(accel_vector[i, i+def_motion_vector.shape[0]], frame_accel))
-            i += def_motion_vector.shape[0]
+        force_variables = [] # List of ExplicitMatrix elements corresponding to joint force variables
+        child_forces = [] # List of ForceVector instances corresponding to joint forces
 
-        for child in self.free_children:
-            child_accel = MotionVector(variable=child["motion"].variables, frame=self.frame)
-            child_def_vars = child_accel.get_def_variables()
-            child_accel.set_variables(accel_vector[i, i+child_def_vars.shape[0]])
-            i += child_def_vars.shape[0]
+        for child in self.children:
+            # Load the acceleration values into a MotionVector we can work with
+            child_accel = MotionVector(frame=child["joint_motion"].frame)
+            child_accel_vars, accel_vector = accel_vector.vsplit(child["joint_motion"].get_def_variables().shape[0])
+            child_accel.set_variables_from(child["joint_motion"], child_accel_vars)
 
-            root_child_accel = self.frame.root_pose.transform_motion(child_accel)+frame_accel
+            # Calculate the world-relative acceleration vector with the local, joint-space acceleration vector
+            child_world_accel = frame_accel + \
+                                child["body"].frame.root_motion.cross(
+                                    child["joint_frame_base"].root_pose.transform_motion(child["joint_motion"])
+                                ) + \
+                                child["joint_frame_base"].root_pose.transform_motion(child_accel)
 
-            def_motion_vector = child["body"].get_def_motion_vector()
-            child_force_vectors.append(child["body"].get_inverse_dynamics(accel_vector[i, i+def_motion_vector.shape[0]], root_child_accel))
-            i += def_motion_vector.shape[0]
+            # Use the world acceleration vector to calculate the force applied to the child body in world coordinates.
+            child_force = child["body"].world_inertia.motion_dot(child_world_accel) + \
+                child["body"].frame.root_motion.cross(
+                    child["body"].world_inertia.motion_dot(child["body"].frame.root_motion)
+                )
 
+            # Recurse to find any force acting on the child from it's children, and use it to calculate the force on
+            # the joint in question in world coordinates.
+            child_recurse_vars, accel_vector = accel_vector.vsplit(child["body"].get_def_motion_vector().shape[0])
+            child_force_variables, child_joint_forces = child["body"].get_inverse_dynamics(child_recurse_vars, child_world_accel)
+            force_variables.append(child_force_variables)
+
+            joint_force = child_force + child_joint_forces
+
+            # Use the inverse of the root pose of the joint base to transform the world force to local coordinates.
+            local_joint_force = child["joint_frame_base"].root_pose.inverse().transform_force(joint_force)
+
+            force_variables.append(local_joint_force.get_variables_from(child["joint_motion"]))
+            child_forces.append(joint_force)
+        if len(force_variables) > 0:
+            force_vector = ExplicitMatrix.vstack(force_variables)
+        else:
+            force_vector = ExplicitMatrix([[]])
+        if len(child_forces) > 0:
+            child_force_sum = sum(child_forces)
+        else:
+            child_force_sum = ForceVector(frame=self.frame.root_pose.frame)
+        return force_vector, child_force_sum
 
 
     def build_inertia_and_bias(self):

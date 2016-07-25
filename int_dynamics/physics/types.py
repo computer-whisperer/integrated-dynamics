@@ -19,8 +19,10 @@ class Frame:
         self.root_pose = root_pose
         self.root_motion = root_motion
 
-    def set_parent_frame(self, frame, relative_pose, relative_motion):
+    def set_parent_frame(self, frame, relative_pose, relative_motion=None):
         self.parent_frame = frame
+        if relative_motion is None:
+            relative_motion = MotionVector(frame=frame)
         if Frame.assert_frames:
             assert frame is relative_pose.frame and frame is relative_motion.frame
         self.relative_pose = relative_pose
@@ -48,7 +50,10 @@ class Quaternion:
 
     def set_variables(self, vars):
         for i in range(len(self.variables)):
-            setattr(self, self.variables[i], vars[i])
+            setattr(self, self.variables[i], vars.get(0, i))
+
+    def get_variables(self):
+        return ExplicitMatrix([[getattr(self, var_name) for var_name in self.variables]])
 
     def __add__(self, other):
         return Quaternion(self.a + other.a, self.b + other.b, self.c + other.c, self.d + other.d)
@@ -59,6 +64,12 @@ class Quaternion:
     def __mul__(self, other):
         if isinstance(other, Quaternion):
             return self.hamilton(other)
+        else:
+            return Quaternion(self.a*other, self.b*other, self.c*other, self.d*other)
+
+    def __rmul__(self, other):
+        if isinstance(other, Quaternion):
+            return other.hamilton(self)
         else:
             return Quaternion(self.a*other, self.b*other, self.c*other, self.d*other)
 
@@ -97,6 +108,7 @@ class Quaternion:
         return Quaternion(a, b, c, d)
 
     def sandwich_mul(self, other):
+        assert isinstance(other, Quaternion)
         return self.hamilton(other).hamilton(self.transpose())
 
     def transpose(self):
@@ -111,9 +123,29 @@ class Quaternion:
     def get_ndarray(self):
         return self.get_array().eval()
 
+    def as_explicit_matrix(self, values="abcd"):
+        return ExplicitMatrix([[getattr(self, var_name) for var_name in values]])
+
 
 def XYZVector(x=0, y=0, z=0, variable=False):
     return Quaternion(0, x, y, z, variables="bcd" if variable else "")
+
+
+def XYVector(x=0, y=0, variable=False):
+    return Quaternion(0, x, y, 0, variables="bc" if variable else "")
+
+
+def Angle(theta=0, variable=False, use_constant=False):
+    if use_constant:
+        if isinstance(theta, T.TensorType):
+            sin = T.sin(theta / 2)
+            cos = T.cos(theta / 2)
+        else:
+            sin = np.sin(theta / 2)
+            cos = np.cos(theta / 2)
+        return Quaternion(cos, 0, 0, sin, variables="ad" if variable else "")
+    else:
+        return Quaternion(0, 0, 0, theta, variables="d" if variable else "")
 
 
 def Versor(v=None, theta=0, variable=False):
@@ -141,6 +173,8 @@ class SpatialVector:
         return self.__class__(self.linear_component+other.linear_component, self.angular_component+other.angular_component, frame=self.frame)
 
     def __radd__(self, other):
+        if other == 0:
+            return self
         if Frame.assert_frames:
             assert self.frame is other.frame and self.frame is not None
         return self.__class__(other.linear_component+self.linear_component, other.angular_component+self.angular_component, frame=self.frame)
@@ -153,10 +187,35 @@ class SpatialVector:
     def get_def_variables(self):
         return np.concatenate([self.linear_component.get_def_variables(), self.angular_component.get_def_variables()])
 
-    def set_variables(self, vars=None):
-        linear_var_count = self.linear_component.get_def_variables().shape[0]
-        self.linear_component.set_variables(vars)
-        self.angular_component.set_variables(vars[linear_var_count:])
+    def get_variables(self):
+        return ExplicitMatrix.vstack([
+            self.linear_component.get_variables(),
+            self.angular_component.get_variables()
+        ])
+
+    def get_variables_from(self, spatial_vector):
+        linear_vars = spatial_vector.linear_component.variables
+        angular_vars = spatial_vector.angular_component.variables
+        self.linear_component.variables = linear_vars
+        self.angular_component.variables = angular_vars
+        return ExplicitMatrix.vstack([
+            self.linear_component.get_variables(),
+            self.angular_component.get_variables()
+        ])
+
+    def set_variables(self, vars):
+        linear_vars, angular_vars = vars.vsplit(self.linear_component.get_def_variables().shape[0])
+        self.linear_component.set_variables(linear_vars)
+        self.angular_component.set_variables(angular_vars)
+
+    def set_variables_from(self, spatial_vector, vars):
+        linear_vars = spatial_vector.linear_component.variables
+        angular_vars = spatial_vector.angular_component.variables
+        linear_vals, angular_vals = vars.vsplit(len(linear_vars))
+        self.linear_component.variables = linear_vars
+        self.angular_component.variables = angular_vars
+        self.linear_component.set_variables(linear_vals)
+        self.angular_component.set_variables(angular_vals)
 
     def get_array(self):
         return T.concatenate([self.linear_component.get_array(), self.angular_component.get_array()])
@@ -213,21 +272,28 @@ class PoseVector(SpatialVector):
     def transform_inertia(self, inertia):
         if Frame.assert_frames:
             assert self.end_frame is inertia.frame
-        mat_1 = ExplicitMatrix([
+        vectors = [
             self.angular_component.sandwich_mul(XYZVector(*inertia.inertia_matrix.columns[0])),
             self.angular_component.sandwich_mul(XYZVector(*inertia.inertia_matrix.columns[1])),
             self.angular_component.sandwich_mul(XYZVector(*inertia.inertia_matrix.columns[2]))
-        ])
-        mat_2 = ExplicitMatrix([
+        ]
+        mat_1 = ExplicitMatrix([[vector.b, vector.c, vector.d] for vector in vectors])
+        vectors = [
             self.angular_component.sandwich_mul(XYZVector(*mat_1.columns[0])),
             self.angular_component.sandwich_mul(XYZVector(*mat_1.columns[1])),
             self.angular_component.sandwich_mul(XYZVector(*mat_1.columns[2]))
-        ])
+        ]
+        mat_2 = ExplicitMatrix([[vector.b, vector.c, vector.d] for vector in vectors])
         new_com = self.angular_component.sandwich_mul(inertia.com) + self.linear_component
         return InertiaMoment(mat_2, new_com, inertia.mass, self.frame)
 
     def transpose(self):
         return self.__class__(self.linear_component.transpose(), self.angular_component.transpose(), frame=self.end_frame, end_frame=self.frame)
+
+    def inverse(self):
+        inverse_angular = self.angular_component.transpose()
+        inverse_linear = inverse_angular.sandwich_mul(self.linear_component)*-1
+        return PoseVector(inverse_linear, inverse_angular, frame=self.end_frame, end_frame=self.frame)
 
 
 class MotionVector(SpatialVector):
@@ -238,6 +304,19 @@ class MotionVector(SpatialVector):
         if angular_component is None:
             angular_component = XYZVector(variable=variable)
         SpatialVector.__init__(self, linear_component, angular_component, frame)
+
+    def cross(self, other):
+        assert self.frame is other.frame
+        if isinstance(other, MotionVector):
+            angular_component = self.angular_component.cross(other.angular_component)
+            linear_component = self.angular_component.cross(other.linear_component) + \
+                self.linear_component.cross(other.angular_component)
+            return MotionVector(linear_component, angular_component, frame=self.frame)
+        else:
+            angular_component = self.angular_component.cross(other.angular_component) + \
+                self.linear_component.cross(other.linear_component)
+            linear_component = self.angular_component.cross(other.linear_component)
+            return ForceVector(linear_component, angular_component, frame=self.frame)
 
 
 class ForceVector(SpatialVector):
@@ -250,6 +329,62 @@ class ForceVector(SpatialVector):
         SpatialVector.__init__(self, linear_component, angular_component, frame)
 
 
+
+
+
+class InertiaMoment:
+
+    def __init__(self, inertia_matrix, com, mass, frame):
+        self.inertia_matrix = inertia_matrix
+        self.mass = mass
+        self.com = com
+        self.frame = frame
+
+    def motion_dot(self, motion_vector):
+        """
+        Multiply the inertia tensor by the motion vector
+        :param motion_vector: The motion vector to right-multiply by
+        :return: force_vector = dot(I, motion_vector)
+        """
+        if Frame.assert_frames:
+            assert motion_vector.frame is self.frame
+        omega_cross = motion_vector.angular_component.cross(self.com)
+        angular_component = self.inertia_matrix.dot(motion_vector.angular_component.as_explicit_matrix(values="cbd")).as_quaternion() \
+                            - self.com.cross(omega_cross)*self.mass \
+                            + self.com.cross(motion_vector.linear_component)*self.mass
+        linear_component = (motion_vector.linear_component + omega_cross)*self.mass
+        return ForceVector(linear_component, angular_component, frame=self.frame)
+
+    def force_dot(self, force_vector):
+        """
+        Multiply the inverse of the inertia tensor by the force vector
+        :param force_vector: The force vector to right-multiply by
+        :return: motion_vector such that force_vector = dot(I, motion_vector),
+         or motion_vector = dot(I^(-1), force_vector)
+        """
+        if Frame.assert_frames:
+            assert force_vector.frame is self.frame
+        angular_component = self.inertia_matrix.solve(force_vector.angular_component + force_vector.linear_component.cross(self.com))
+        linear_component = force_vector/self.mass - angular_component.cross(self.com)
+        return MotionVector(angular_component, linear_component, frame=self.frame)
+
+    def __add__(self, other):
+        if Frame.assert_frames:
+            assert self.frame is other.frame
+        inertia_matrix = self.inertia_matrix + other.inertia_matrix
+        mass = self.mass + other.mass
+        com = (self.com*self.mass + other.com*other.mass)/mass
+        return InertiaMoment(inertia_matrix, com, mass, self.frame)
+
+    def __sub__(self, other):
+        if Frame.assert_frames:
+            assert self.frame is other.frame
+        inertia_matrix = self.inertia_matrix - other.inertia_matrix
+        mass = self.mass - other.mass
+        com = (self.com*self.mass - other.com*other.mass)/mass
+        return InertiaMoment(inertia_matrix, com, mass, self.frame)
+
+
 class ExplicitMatrix:
 
     def __init__(self, columns, shape=None):
@@ -257,8 +392,6 @@ class ExplicitMatrix:
         if shape is None:
             shape = (len(columns), len(columns[0]))
         self.shape = shape
-        for column in columns:
-            assert len(column) == self.shape[1]
 
     def elementwise_op(self, other, operation):
         assert self.shape == other.shape
@@ -275,6 +408,12 @@ class ExplicitMatrix:
 
     def __sub__(self, other):
         return self.elementwise_op(other, lambda a, b: a-b)
+
+    def __mul__(self, other):
+        if isinstance(other, ExplicitMatrix):
+            return self.elementwise_op(other, lambda a, b: a*b)
+        else:
+            return self.elementwise_op(self, lambda a, b: a*other)
 
     def transpose(self):
         new_columns = []
@@ -339,11 +478,60 @@ class ExplicitMatrix:
     def get(self, x, y):
         return self.columns[x][y]
 
+    @staticmethod
+    def hstack(explicit_matrices):
+        shape = explicit_matrices[0].shape
+        columns = []
+        for mat in explicit_matrices:
+            assert mat.shape[1] == shape[1]
+            columns.extend(mat.columns)
+        return ExplicitMatrix(columns)
+
+    @staticmethod
+    def vstack(explicit_matrices):
+        shape = explicit_matrices[0].shape
+        columns = [[] for _ in range(shape[0])]
+        for mat in explicit_matrices:
+            assert mat.shape[0] == shape[0]
+            for x in range(shape[0]):
+                columns[x].extend(mat.columns[x])
+        return ExplicitMatrix(columns, (shape[0], len(columns[0])))
+
+    def vsplit(self, index):
+        a_columns = []
+        b_columns = []
+        for x in range(self.shape[0]):
+            a_columns.append(self.columns[x][:index])
+            b_columns.append(self.columns[x][index:])
+        return ExplicitMatrix(a_columns, (self.shape[0], index)), \
+               ExplicitMatrix(b_columns, (self.shape[0], self.shape[1]-index))
+
+    def hsplit(self, index):
+        return ExplicitMatrix(self.columns[:index], (index, self.shape[0])), \
+               ExplicitMatrix(self.columns[index:], (self.shape[0]-index, self.shape[1]))
+
     def __len__(self):
         return self.shape[0]
 
     def __getitem__(self, item):
         return self.columns[item]
+
+    def as_quaternion(self):
+        assert self.shape[0] == 1
+        if self.shape[1] == 3:
+            return Quaternion(0, self.get(0, 0), self.get(0, 1), self.get(0, 2))
+        elif self.shape[1] == 4:
+            return Quaternion(self.get(0, 0), self.get(0, 1), self.get(0, 2), self.get(0, 3))
+        else:
+            assert False
+
+    def get_theano_array(self):
+        return T.stack([T.stack(column) for column in self.columns], axis=0)
+
+    def get_ndarray(self):
+        return self.get_theano_array().eval()
+
+
 
 
 def SymmetricMatrix3X3(m_xx, m_xy, m_xz, m_yy, m_yz, m_zz):
@@ -354,56 +542,3 @@ def SymmetricMatrix3X3(m_xx, m_xy, m_xz, m_yy, m_yz, m_zz):
 
 def DiagonalMatrix3X3(m_xx, m_yy, m_zz):
     return SymmetricMatrix3X3(m_xx, 0, 0, m_yy, 0, m_zz)
-
-
-class InertiaMoment:
-
-    def __init__(self, inertia_matrix, com, mass, frame):
-        self.inertia_matrix = inertia_matrix
-        self.mass = mass
-        self.com = com
-        self.frame = frame
-
-    def motion_dot(self, motion_vector):
-        """
-        Multiply the inertia tensor by the motion vector
-        :param motion_vector: The motion vector to right-multiply by
-        :return: force_vector = dot(I, motion_vector)
-        """
-        if Frame.assert_frames:
-            assert motion_vector.frame is self.frame
-        omega_cross = motion_vector.angular_component.cross(self.com)
-        angular_component = self.inertia_matrix.dot(motion_vector.angular_component) \
-                            - self.com.cross(omega_cross)*self.mass \
-                            + self.com.cross(motion_vector.linear_component)*self.mass
-        linear_component = (motion_vector.linear_component + omega_cross)*self.mass
-        return ForceVector(linear_component, angular_component, frame=self.frame)
-
-    def force_dot(self, force_vector):
-        """
-        Multiply the inverse of the inertia tensor by the force vector
-        :param force_vector: The force vector to right-multiply by
-        :return: motion_vector such that force_vector = dot(I, motion_vector),
-         or motion_vector = dot(I^(-1), force_vector)
-        """
-        if Frame.assert_frames:
-            assert force_vector.frame is self.frame
-        angular_component = self.inertia_matrix.solve(force_vector.angular_component + force_vector.linear_component.cross(self.com))
-        linear_component = force_vector/self.mass - angular_component.cross(self.com)
-        return MotionVector(angular_component, linear_component, frame=self.frame)
-
-    def __add__(self, other):
-        if Frame.assert_frames:
-            assert self.frame is other.frame
-        inertia_matrix = self.inertia_matrix + other.inertia_matrix
-        mass = self.mass + other.mass
-        com = (self.com*self.mass + other.com*other.mass)/mass
-        return InertiaMoment(inertia_matrix, com, mass, self.frame)
-
-    def __sub__(self, other):
-        if Frame.assert_frames:
-            assert self.frame is other.frame
-        inertia_matrix = self.inertia_matrix - other.inertia_matrix
-        mass = self.mass - other.mass
-        com = (self.com*self.mass - other.com*other.mass)/mass
-        return InertiaMoment(inertia_matrix, com, mass, self.frame)
