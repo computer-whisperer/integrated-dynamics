@@ -340,8 +340,8 @@ class InertiaMoment:
         if Frame.assert_frames:
             assert motion_vector.frame is self.frame
         omega_cross = motion_vector.angular_component.cross(self.com)
-        angular_component = self.inertia_matrix.dot(motion_vector.angular_component.as_explicit_matrix(values="cbd")).as_quaternion() \
-                            - self.com.cross(omega_cross)*self.mass \
+        angular_component = self.inertia_matrix.dot(motion_vector.angular_component.as_explicit_matrix(values="bcd")).as_quaternion() \
+                            + self.com.cross(omega_cross)*self.mass \
                             + self.com.cross(motion_vector.linear_component)*self.mass
         linear_component = (motion_vector.linear_component + omega_cross)*self.mass
         return ForceVector(linear_component, angular_component, frame=self.frame)

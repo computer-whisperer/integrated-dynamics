@@ -11,8 +11,9 @@ import math
 
 
 class SymbolicConfig:
-    backend = "other"
+    backend = "numpy"
     do_optimize = True
+    live_execute = True
     eval_id = 0
 
 
@@ -37,6 +38,10 @@ class Node:
     parent_nodes = []
     last_eval_id = -1
     result = None
+
+    def __init__(self):
+        if SymbolicConfig.live_execute:
+            self.get_value()
 
     def __add__(self, other):
         return AddOp.create_node([self, other])
@@ -82,6 +87,7 @@ class VariableNode(Node):
         self.value = value
         self.value_changed = False
         self.shared = None
+        super().__init__()
 
     def set_value(self, value):
         if value != self.value:
@@ -109,6 +115,7 @@ class SlicedNode(Node):
     def __init__(self, node, item):
         self.node = node
         self.item = item
+        super().__init__()
 
     def get_value(self):
         if self.last_eval_id < SymbolicConfig.eval_id:
@@ -125,6 +132,7 @@ class StackedNode(Node):
     def __init__(self, nodes, axis):
         self.parent_nodes = nodes
         self.axis = axis
+        super().__init__()
 
     def get_value(self):
         if self.last_eval_id < SymbolicConfig.eval_id:
@@ -171,6 +179,7 @@ class ApplyNode(Node):
     def __init__(self, op, inputs):
         self.op = op
         self.parent_nodes = inputs
+        super().__init__()
 
     def get_value(self):
         if self.last_eval_id < SymbolicConfig.eval_id:

@@ -172,7 +172,6 @@ class Body:
             # the joint in question in world coordinates.
             child_recurse_vars, accel_vector = accel_vector.vsplit(child["body"].get_def_motion_vector().shape[0])
             child_force_variables, child_joint_forces = child["body"].get_inverse_dynamics(child_recurse_vars, child_world_accel)
-            force_variables.append(child_force_variables)
 
             joint_force = child_force + child_joint_forces
 
@@ -180,6 +179,7 @@ class Body:
             local_joint_force = child["joint_frame_base"].root_pose.inverse().transform_force(joint_force)
 
             force_variables.append(local_joint_force.get_variables_from(child["joint_motion"]))
+            force_variables.append(child_force_variables)
             child_forces.append(joint_force)
         if len(force_variables) > 0:
             force_vector = ExplicitMatrix.vstack(force_variables)
