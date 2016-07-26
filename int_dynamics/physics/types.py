@@ -208,6 +208,15 @@ class SpatialVector:
         self.linear_component.set_variables(linear_vals)
         self.angular_component.set_variables(angular_vals)
 
+    def integrate_motion(self, motionvector, dt):
+        linear_component = motionvector.linear_component * dt
+        angular_magnitude = motionvector.angular_component.get_magnitude()
+        angular_normal = motionvector.angular_component * (1/angular_magnitude)
+        angular_component = Versor(angular_normal, angular_magnitude*dt).hamilton(self.angular_component)
+        linear_component.variables = self.linear_component.variables
+        angular_component.variables = self.angular_component.variables
+        return PoseVector(linear_component, angular_component, frame=self.frame)
+
     def get_array(self):
         return symbolic_types.concatenate([self.linear_component.get_array(), self.angular_component.get_array()])
 

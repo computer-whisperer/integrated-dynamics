@@ -56,6 +56,7 @@ class Body:
             "joint_base": joint_base,
             "joint_pose": joint_pose,
             "joint_motion": joint_motion,
+            "joint_forces": [],
             "joint_frame_base": joint_frame_base,
             "joint_frame_end": joint_frame_end
         })
@@ -131,7 +132,7 @@ class Body:
 #        for child in self.fixed_children:
 #            self.local_inertia += child["body"].local_inertia
 
-    def get_inverse_dynamics(self, accel_vector, frame_accel):
+    def get_inverse_dynamics(self, accel_vector, frame_accel=None):
         """
         Recursively compute the inverse dynamics problem using RNEA given the current body's pose and motion, and the
         provided acceleration vector.
@@ -142,6 +143,8 @@ class Body:
         :returns: An ExplicitMatrix vector of the same size as accel_vector, but with force values corresponding to the acceleration values.
         :returns: A ForceVector with the sum of all forces applied by child joints, in world-space coordinates.
         """
+        if frame_accel is None:
+            frame_accel = MotionVector(frame = self.frame)
         # for debugging
         full_accel_vector = accel_vector
 
@@ -191,35 +194,36 @@ class Body:
             child_force_sum = ForceVector(frame=self.frame.root_pose.frame)
         return force_vector, child_force_sum
 
+    def get_total_forces(self):
+        local_forces = []
+        for child in self.children:
+            if len(child["joint_forces"]) > 0:
+                joint_force_sum = sum(child["joint_forces"])
+            else:
+                joint_force_sum = ForceVector(frame=self.frame)
+            local_forces.append(joint_force_sum.get_variables_from(child["joint_motion"]))
+            local_forces.append(child["body"].get_total_forces())
+        if len(local_forces) > 0:
+            return ExplicitMatrix.vstack(local_forces)
+        else:
+            return ExplicitMatrix([[]])
 
-    def build_inertia_and_bias(self):
-        self.articulated_inertia = self.get_rigid_body_inertia()
-        for child in self.free_children + self.fixed_children + self.articulated_children:
-            child["body"].build_inertia_and_bias()
-        for child in self.fixed_children:
-            self.articulated_inertia += child["body"].articulated_inertia
+    def integrate_motion(self, joint_motion_vector, dt):
+        pose_vectors = []
+        for child in self.children:
+            def_joint_motion = child["joint_motion"].get_def_variables()
+            child_joint_motion_vars, joint_motion_vector = joint_motion_vector.vsplit(def_joint_motion.shape[0])
+            child_joint_motion = MotionVector()
+            child_joint_motion.set_variables_from(child["joint_motion"], child_joint_motion_vars)
+            new_joint_pose = child["joint_pose"].integrate_motion(child_joint_motion, dt)
+            pose_vectors.append(new_joint_pose.get_variables())
 
-
-     #   moment_sum = XYVector(0, 0)
-     #   self.total_mass = self.body_mass
-     #   self.moment_inertia = self.get_local_inertia()
-     #   for child in self.fixed_children + self.free_children:
-     #       child["body"].build_inertia()
-     #       self.total_mass += child["body"].total_mass
-     #       child_pos, child_rot = child["pos"], child["rot"]
-     #       child_com = child_rot.rotate_xyvector(child["body"].total_com).add(child_pos)
-     #       child_moment = child_com.multiply_by_scalar(child["body"].total_mass)
-     #       self.moment_inertia += child_pos.get_magnitude()**2 * child["body"].total_mass + child["body"].moment_inertia
-     #       moment_sum = moment_sum.add(child_moment)
-     #   self.total_com = moment_sum.multiply_by_scalar(1/self.total_mass)
-
-    def build_forces(self):
-        self.net_force = sum(self.forces)
-        for child in self.fixed_children:
-            child["body"].build_forces()
-            self.net_force += child["pose"].transform_force(child["body"].net_force)
-        for child in self.free_children:
-            child["body"].build_integration()
+            rec_joint_motion_vector, joint_motion_vector = joint_motion_vector.vsplit(child["body"].get_def_motion_vector().shape[0])
+            pose_vectors.append(child["body"].integrate_motion(rec_joint_motion_vector, dt))
+        if len(pose_vectors) > 0:
+            return ExplicitMatrix.vstack(pose_vectors)
+        else:
+            return ExplicitMatrix([[]])
 
     def build_integration(self, dt, root_position, root_motion):
         for child in self.free_children:

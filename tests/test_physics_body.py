@@ -8,9 +8,11 @@ from int_dynamics.physics import *
 def test_body_1():
     world = WorldBody()
     body = CubeBody(1, 1, 1, 1)
-    world.add_child(body)
+    world.add_child(body, joint_pose=PoseVector(variable=True), joint_motion=MotionVector(variable=True))
     integrator = EulerIntegrator()
-    integrator.build_simulation_tensors(world)
+    integrator.build_frames(world)
+    integrator.build_simulation_tensors()
+    integrator.build_simulation_functions()
     while integrator.get_time() < 10:
         integrator.step_time()
 
@@ -32,7 +34,7 @@ def test_composite_body_positions():
     body_4.add_child(body_5, joint_pose=PoseVector(XYZVector(0, 5, 0)))
 
     integrator = EulerIntegrator()
-    integrator.build_simulation_tensors(world)
+    integrator.build_frames(world)
 
     s2o2 = math.sqrt(2) / 2
     assert_almost_equal(body_1.frame.root_pose.get_ndarray(), [0, 0, 4, 0, 1, 0, 0, 0])
@@ -78,9 +80,9 @@ def test_inverse_dynamics_articulated_2d():
     )
 
     integrator = EulerIntegrator()
-    integrator.build_simulation_tensors(world)
+    integrator.build_frames(world)
     accel_vector = ExplicitMatrix([[-1, 3, -5]])
-    force_vector, root_forces = world.get_inverse_dynamics(accel_vector, MotionVector(frame=world.frame))
+    force_vector, root_forces = world.get_inverse_dynamics(accel_vector)
     force_vector_array = force_vector.get_symbolic_array()
     func = build_symbolic_function(force_vector_array)
     assert_almost_equal(func(), [-166.8333333, -83.4166667, -50.25])
@@ -135,10 +137,10 @@ def test_inverse_dynamics_articulated_3d():
 
 
     integrator = EulerIntegrator()
-    integrator.build_simulation_tensors(world)
+    integrator.build_frames(world)
 
     accel_vector = ExplicitMatrix([[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]])
-    force_vector, root_forces = world.get_inverse_dynamics(accel_vector, MotionVector(frame=world.frame))
+    force_vector, root_forces = world.get_inverse_dynamics(accel_vector)
     force_vector_array = force_vector.get_symbolic_array()
     func = build_symbolic_function(force_vector_array)
     value = func()

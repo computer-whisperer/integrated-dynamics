@@ -67,6 +67,12 @@ class Node:
     def __neg__(self):
         return self*-1
 
+    def __pow__(self, power, modulo=None):
+        result = 0
+        for _ in range(power):
+            result *= power
+        return result
+
     def get_value(self):
         raise NotImplementedError()
 
