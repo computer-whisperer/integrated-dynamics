@@ -263,16 +263,17 @@ class PoseVector(SpatialVector):
     def transform_inertia(self, inertia):
         if Frame.assert_frames:
             assert self.end_frame is inertia.frame
+        angular_component_trans = self.angular_component
         vectors = [
-            self.angular_component.sandwich_mul(XYZVector(*inertia.inertia_matrix.columns[0])),
-            self.angular_component.sandwich_mul(XYZVector(*inertia.inertia_matrix.columns[1])),
-            self.angular_component.sandwich_mul(XYZVector(*inertia.inertia_matrix.columns[2]))
+            angular_component_trans.sandwich_mul(XYZVector(*inertia.inertia_matrix.columns[0])),
+            angular_component_trans.sandwich_mul(XYZVector(*inertia.inertia_matrix.columns[1])),
+            angular_component_trans.sandwich_mul(XYZVector(*inertia.inertia_matrix.columns[2]))
         ]
-        mat_1 = ExplicitMatrix([[vector.b, vector.c, vector.d] for vector in vectors])
+        mat_1 = ExplicitMatrix([[vector.b, vector.c, vector.d] for vector in vectors]).transpose()
         vectors = [
-            self.angular_component.sandwich_mul(XYZVector(*mat_1.columns[0])),
-            self.angular_component.sandwich_mul(XYZVector(*mat_1.columns[1])),
-            self.angular_component.sandwich_mul(XYZVector(*mat_1.columns[2]))
+            angular_component_trans.sandwich_mul(XYZVector(*mat_1.columns[0])),
+            angular_component_trans.sandwich_mul(XYZVector(*mat_1.columns[1])),
+            angular_component_trans.sandwich_mul(XYZVector(*mat_1.columns[2]))
         ]
         mat_2 = ExplicitMatrix([[vector.b, vector.c, vector.d] for vector in vectors])
         new_com = self.angular_component.sandwich_mul(inertia.com) + self.linear_component

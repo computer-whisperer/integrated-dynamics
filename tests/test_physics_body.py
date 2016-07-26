@@ -94,13 +94,13 @@ def test_inverse_dynamics_articulated_3d():
     wheel_1 = CubeBody(1, 10, 10, 1)
     wheel_2 = CubeBody(1, 10, 10, 1)
     wheel_3 = CubeBody(1, 10, 10, 1)
-    wheel_4 = CubeBody(1, 10, 10, 1)
+    wheel_4 = CubeBody(1, 10, 10, 1.5)
 
     world.add_child(
         chassis,
         pose=PoseVector(XYZVector(0, 0)),
         joint_base=PoseVector(XYZVector(0, 0)),
-        joint_pose=PoseVector(XYZVector(0, 0, 0, variable=True), Versor(XYZVector(), 0, variable=True)),
+        joint_pose=PoseVector(XYZVector(0, 0, 0, variable=True), Versor(XYZVector(0, 1, 0), math.pi/2, variable=True)),
         joint_motion=MotionVector(XYZVector(0, 0, 0, variable=True), XYZVector(0, 0, 0, variable=True))
     )
 
@@ -136,22 +136,13 @@ def test_inverse_dynamics_articulated_3d():
 
     integrator = EulerIntegrator()
     integrator.build_simulation_tensors(world)
+
     accel_vector = ExplicitMatrix([[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]])
     force_vector, root_forces = world.get_inverse_dynamics(accel_vector, MotionVector(frame=world.frame))
     force_vector_array = force_vector.get_symbolic_array()
     func = build_symbolic_function(force_vector_array)
-    start = time.time()
     value = func()
-    print(value)
-    print("took {} for 1 execution".format(time.time() - start))
-    start = time.time()
-    for _ in range(1000):
-        func()
-    print("took {} for 1000 executions".format(time.time() - start))
-    print(count_nodes(force_vector_array))
-
-
-
+    assert_almost_equal(value, np.array([0, 0, 0, 0, 0, -25, 0, 0, 0, 25]))
 
 
 
