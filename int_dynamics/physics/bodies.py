@@ -1,14 +1,19 @@
-from .types import *
+from sympy.physics.vector import *
+from sympy.physics.mechanics.rigidbody import RigidBody
 
 
 class Body:
 
-    def __init__(self, body_mass, name=None):
+    def __init__(self, frame, body_mass, com=None, inertia=None, name=None):
         self.children = []
         if name is None:
             name = self.__class__.__name__
+        if com is None:
+            com = [0, 0, 0]
         self.name = name
-        self.frame = Frame(name=name)
+        self.frame = frame
+        self.com = self.frame.
+        self.rigid_body = RigidBody(name, com, self.frame, body_mass, self.get_rigid_body_inertia())
 
         self.root_body = None
 
@@ -18,7 +23,7 @@ class Body:
         self.forces = []
         self.net_force = None
 
-    def add_child(self, body, pose=None, joint_base=None, joint_pose=None, joint_motion=None):
+    def add_child(self, body, pose=0, joint_base=0, joint_freedom=""):
         """
         Add an articulated child to this body.
         The type of joint is controlled by the variables set in joint_motion.
@@ -26,39 +31,17 @@ class Body:
 
         :param body: The body instance to add.
         :param pose: The pose of the child relative to the joint.
-        :param joint_base: The pose of the joint base in local frame coordinates.(optional)
-        :param joint_pose: The initial pose of the joint, with variables corresponding to degrees of freedom (optional).
-        :param joint_motion: The initial motion of this joint, with variables corresponding to degrees of freedom (optional).
+        :param joint_base: The pose of the joint base relative to the parent.(optional)
+        :param joint_freedom: The degrees of freedom of the joint. (not sure what the type is yet)
         """
 
-        if pose is None:
-            pose = PoseVector(variable=False)
-        if joint_base is None:
-            joint_base = PoseVector(variable=False)
-        if joint_pose is None:
-            joint_pose = PoseVector(variable=True)
-        if joint_motion is None:
-            joint_motion = MotionVector(variable=True)
-
-        joint_frame_base = Frame(name="joint_base_{}_{}".format(self.name, body.name))
-        joint_frame_end = Frame(name="joint_end_{}_{}".format(self.name, body.name))
-
-        joint_base.frame = self.frame
-        joint_base.end_frame = joint_frame_base
-        joint_pose.frame = joint_frame_base
-        joint_pose.end_frame = joint_frame_end
-        joint_motion.frame = joint_frame_base
-        pose.frame = joint_frame_end
-        pose.end_frame = body.frame
         self.children.append({
             "body": body,
             "pose": pose,
             "joint_base": joint_base,
             "joint_pose": joint_pose,
             "joint_motion": joint_motion,
-            "joint_forces": [],
-            "joint_frame_base": joint_frame_base,
-            "joint_frame_end": joint_frame_end
+            "joint_forces": []
         })
 
     def get_all_children(self):

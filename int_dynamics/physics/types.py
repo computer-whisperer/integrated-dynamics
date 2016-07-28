@@ -1,5 +1,5 @@
 import numpy as np
-from int_dynamics.physics import symbolic_types
+import sympy
 
 
 class Frame:
@@ -114,10 +114,10 @@ class Quaternion:
         return Quaternion(self.a, -self.b, -self.c, -self.d)
 
     def get_magnitude(self):
-        return symbolic_types.sqrt(sum([comp**2 for comp in self.get_components()]))
+        return sympy.sqrt(sum([comp**2 for comp in self.get_components()]))
 
     def get_array(self):
-        return symbolic_types.stack(self.get_components())
+        return sympy.Matrix(self.get_components())
 
     def get_ndarray(self):
         return self.get_array().eval()
@@ -136,8 +136,8 @@ def XYVector(x=0, y=0, variable=False):
 
 def Angle(theta=0, variable=False, use_constant=False):
     if use_constant:
-        sin = symbolic_types.sin(theta / 2)
-        cos = symbolic_types.cos(theta / 2)
+        sin = sympy.sin(theta / 2)
+        cos = sympy.cos(theta / 2)
         return Quaternion(cos, 0, 0, sin, variables="ad" if variable else "")
     else:
         return Quaternion(0, 0, 0, theta, variables="d" if variable else "")
@@ -146,8 +146,8 @@ def Angle(theta=0, variable=False, use_constant=False):
 def Versor(v=None, theta=0, variable=False):
     if v is None:
         v = XYZVector()
-    sin = symbolic_types.sin(theta / 2)
-    cos = symbolic_types.cos(theta / 2)
+    sin = sympy.sin(theta / 2)
+    cos = sympy.cos(theta / 2)
     return Quaternion(cos, sin*v.b, sin*v.c, sin*v.d, variables="abcd" if variable else "")
 
 
@@ -218,7 +218,7 @@ class SpatialVector:
         return PoseVector(linear_component, angular_component, frame=self.frame)
 
     def get_array(self):
-        return symbolic_types.concatenate([self.linear_component.get_array(), self.angular_component.get_array()])
+        return self.linear_component.get_array().col_join(self.angular_component.get_array())
 
     def get_ndarray(self):
         return self.get_array().eval()
