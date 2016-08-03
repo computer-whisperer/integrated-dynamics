@@ -61,22 +61,22 @@ def test_inverse_dynamics_articulated_2d():
         link_1,
         pose=PoseVector(XYVector(0, 5)),
         joint_base=PoseVector(XYVector(0, 0)),
-        joint_pose=PoseVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=True)),
-        joint_motion=MotionVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=False))
+        joint_pose=PoseVector(XYVector(0, 0, symbols=False), Angle(0, symbols=True, use_constant=True)),
+        joint_motion=MotionVector(XYVector(0, 0, symbols=False), Angle(0, symbols=True, use_constant=False))
     )
     link_1.add_child(
         link_2,
         pose=PoseVector(XYVector(0, 5)),
         joint_base=PoseVector(XYVector(0, 5)),
-        joint_pose=PoseVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=True)),
-        joint_motion=MotionVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=False))
+        joint_pose=PoseVector(XYVector(0, 0, symbols=False), Angle(0, symbols=True, use_constant=True)),
+        joint_motion=MotionVector(XYVector(0, 0, symbols=False), Angle(0, symbols=True, use_constant=False))
     )
     link_2.add_child(
         link_3,
         pose=PoseVector(XYVector(0, 5)),
         joint_base=PoseVector(XYVector(0, 5)),
-        joint_pose=PoseVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=True)),
-        joint_motion=MotionVector(XYVector(0, 0, variable=False), Angle(0, variable=True, use_constant=False))
+        joint_pose=PoseVector(XYVector(0, 0, symbols=False), Angle(0, symbols=True, use_constant=True)),
+        joint_motion=MotionVector(XYVector(0, 0, symbols=False), Angle(0, symbols=True, use_constant=False))
     )
 
     integrator = EulerIntegrator()
@@ -102,37 +102,37 @@ def test_inverse_dynamics_articulated_3d():
         chassis,
         pose=PoseVector(XYZVector(0, 0)),
         joint_base=PoseVector(XYZVector(0, 0)),
-        joint_pose=PoseVector(XYZVector(0, 0, 0, variable=True), Versor(XYZVector(0, 1, 0), math.pi/2, variable=True)),
-        joint_motion=MotionVector(XYZVector(0, 0, 0, variable=True), XYZVector(0, 0, 0, variable=True))
+        joint_pose=PoseVector(XYZVector(0, 0, 0, symbols=True), Versor(XYZVector(0, 1, 0), math.pi / 2, symbols=True)),
+        joint_motion=MotionVector(XYZVector(0, 0, 0, symbols=True), XYZVector(0, 0, 0, symbols=True))
     )
 
     chassis.add_child(
         wheel_1,
         pose=PoseVector(XYVector(0, 0, 0)),
         joint_base=PoseVector(XYZVector(-5, 0, 5)),
-        joint_pose=PoseVector(XYZVector(0, 0, 0, variable=False), Quaternion(1, 0, 0, 0, variables="ab")),
-        joint_motion=MotionVector(XYZVector(0, 0, 0, variable=False), Quaternion(0, 0, 0, 0, variables="b"))
+        joint_pose=PoseVector(XYZVector(0, 0, 0, symbols=False), Quaternion(1, 0, 0, 0, symbol_components="ab")),
+        joint_motion=MotionVector(XYZVector(0, 0, 0, symbols=False), Quaternion(0, 0, 0, 0, symbol_components="b"))
     )
     chassis.add_child(
         wheel_2,
         pose=PoseVector(XYVector(0, 0, 0)),
         joint_base=PoseVector(XYZVector(5, 0, 5)),
-        joint_pose=PoseVector(XYZVector(0, 0, 0, variable=False), Quaternion(1, 0, 0, 0, variables="ab")),
-        joint_motion=MotionVector(XYZVector(0, 0, 0, variable=False), Quaternion(0, 0, 0, 0, variables="b"))
+        joint_pose=PoseVector(XYZVector(0, 0, 0, symbols=False), Quaternion(1, 0, 0, 0, symbol_components="ab")),
+        joint_motion=MotionVector(XYZVector(0, 0, 0, symbols=False), Quaternion(0, 0, 0, 0, symbol_components="b"))
     )
     chassis.add_child(
         wheel_3,
         pose=PoseVector(XYVector(0, 0, 0)),
         joint_base=PoseVector(XYZVector(5, 0, -5)),
-        joint_pose=PoseVector(XYZVector(0, 0, 0, variable=False), Quaternion(1, 0, 0, 0, variables="ab")),
-        joint_motion=MotionVector(XYZVector(0, 0, 0, variable=False), Quaternion(0, 0, 0, 0, variables="b"))
+        joint_pose=PoseVector(XYZVector(0, 0, 0, symbols=False), Quaternion(1, 0, 0, 0, symbol_components="ab")),
+        joint_motion=MotionVector(XYZVector(0, 0, 0, symbols=False), Quaternion(0, 0, 0, 0, symbol_components="b"))
     )
     chassis.add_child(
         wheel_4,
         pose=PoseVector(XYVector(0, 0, 0)),
         joint_base=PoseVector(XYZVector(-5, 0, -5)),
-        joint_pose=PoseVector(XYZVector(0, 0, 0, variable=False), Quaternion(1, 0, 0, 0, variables="ab")),
-        joint_motion=MotionVector(XYZVector(0, 0, 0, variable=False), Quaternion(0, 0, 0, 0, variables="b"))
+        joint_pose=PoseVector(XYZVector(0, 0, 0, symbols=False), Quaternion(1, 0, 0, 0, symbol_components="ab")),
+        joint_motion=MotionVector(XYZVector(0, 0, 0, symbols=False), Quaternion(0, 0, 0, 0, symbol_components="b"))
     )
 
 

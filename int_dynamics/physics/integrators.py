@@ -1,14 +1,15 @@
 from .types import *
-from .symbolic_types import *
-
+import sympy
 
 class EulerIntegrator:
 
     def __init__(self):
+        self.state_names = None
+        self.state_symbols = None
         self.current_state = None
         self.default_state = None
-        self.pose_tensor = None
-        self.motion_tensor = None
+        self.pose_symbols = None
+        self.motion_symbols = None
         self.root_body = None
         self.time = 0
 
@@ -20,11 +21,12 @@ class EulerIntegrator:
 
         default_pose = self.root_body.get_def_pose_vector()
         default_motion = self.root_body.get_def_motion_vector()
-        self.default_state = np.concatenate([default_pose, default_motion])
-        self.current_state = symbolic_types.VariableNode(self.default_state)
-        self.state_explicit_matrix = ExplicitMatrix([self.current_state], (1, self.default_state.shape[0]))
-        self.pose_tensor, self.motion_tensor = self.state_explicit_matrix.vsplit(default_pose.shape[0])
-        self.root_body.set_variables(self.pose_tensor, self.motion_tensor)
+        self.default_state = default_pose + default_motion
+        self.state_names = ["state {}".format(i) for i in range(len(self.default_state))]
+        self.state_symbols = sympy.symbols(" ".join(self.state_names))
+        self.pose_symbols, self.motion_symbols = split_list(self.state_symbols, [len(default_pose)])
+
+        self.root_body.set_variable_values(self.pose_tensor, self.motion_tensor)
         self.root_body.calculate_frames()
 
     def build_simulation_tensors(self):
@@ -50,6 +52,8 @@ class EulerIntegrator:
 
     def build_simulation_functions(self):
         self.forward_dynamics_func = build_symbolic_function(self.new_state)
+
+    def build_substitutions(self, state_matrix):
 
     def step_time(self, dt=0.1):
         self.dt.set_value(dt)
