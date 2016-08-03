@@ -1,12 +1,11 @@
 import sympy
 from sympy.matrices import Matrix
 
+
 class Frame:
     """
     A utility class representing a frame of reference
     """
-    assert_frames = True
-
     parent_frame = None
 
     relative_pose = None
@@ -21,8 +20,8 @@ class Frame:
         self.parent_frame = frame
         if relative_motion is None:
             relative_motion = MotionVector(frame=frame)
-        if Frame.assert_frames:
-            assert frame is relative_pose.frame and frame is relative_motion.frame
+        frame.check_identity(relative_pose.frame)
+        frame.check_identity(relative_motion.frame)
         self.relative_pose = relative_pose
         self.relative_motion = relative_motion
         self.root_pose = frame.root_pose.transform_pose(relative_pose)
@@ -51,12 +50,11 @@ class Quaternion:
     def from_matrix(cls, matrix, components="abcd"):
         args = []
         for val in "abcd":
-            index = components.index(val)
-            if index >= 0:
-                args.append(matrix[0][index])
+            if val in components:
+                args.append(matrix[components.index(val), 0])
             else:
                 args.append(0)
-        cls(args)
+        return cls(*args)
 
     def get_def_symbol_values(self):
         return [getattr(self, "def_"+var) for var in self.symbol_components]
@@ -69,6 +67,10 @@ class Quaternion:
 
     def get_values(self, components="abcd"):
         return [getattr(self, var_name) for var_name in components]
+
+    def set_values(self, values, components="abcd"):
+        for i in range(len(components)):
+            setattr(self, components[i], values[i])
 
     def __add__(self, other):
         return Quaternion(self.a + other.a, self.b + other.b, self.c + other.c, self.d + other.d)
@@ -137,10 +139,14 @@ class Quaternion:
         return Quaternion(self.a, -self.b, -self.c, -self.d)
 
     def get_magnitude(self):
-        return sympy.sqrt(sum([comp**2 for comp in self.get_values()]))
+        return (self.a**2 + self.b**2 + self.c**2 + self.d**2)**0.5
 
     def as_matrix(self, values="abcd"):
         return Matrix([[getattr(self, var_name)] for var_name in values])
+
+    def get_ndarray(self, subs=None):
+        import numpy
+        return numpy.array(self.as_matrix().evalf(subs)).astype(numpy.float64)[:, 0]
 
 
 def XYZVector(x=0, y=0, z=0, symbols=False):
@@ -185,11 +191,15 @@ class SpatialVector:
             symbols.append("_".join(["lin", symbol]))
         for symbol in self.angular_component.get_symbol_components():
             symbols.append("_".join(["ang", symbol]))
+        return symbols
 
     def get_def_symbol_values(self):
         return self.linear_component.get_def_symbol_values() + self.angular_component.get_def_symbol_values()
 
-    def get_symbols(self, components=("lin_a", "lin_b", "lin_c", "lin_d", "ang_a", "ang_b", "ang_c", "ang_d")):
+    def get_symbols(self):
+        return self.get_values(components=self.get_symbol_components())
+
+    def get_values(self, components=("lin_a", "lin_b", "lin_c", "lin_d", "ang_a", "ang_b", "ang_c", "ang_d")):
         linear_components = ""
         angular_components = ""
         for comp in components:
@@ -197,21 +207,19 @@ class SpatialVector:
                 linear_components += (comp[4])
             if comp.startswith("ang_"):
                 angular_components += (comp[4])
-        return self.linear_component.get_symbols(linear_components) + self.angular_component.get_symbols(angular_components)
+        return self.linear_component.get_values(linear_components) + self.angular_component.get_values(angular_components)
 
-    def set_variables(self, vars):
-        linear_vars, angular_vars = split_list(vars, [len(self.linear_component.get_def_symbol_values())])
-        self.linear_component.set_variable_values(linear_vars)
-        self.angular_component.set_variable_values(angular_vars)
-
-    def set_variables_from(self, spatial_vector, vars):
-        linear_vars = spatial_vector.linear_component.variables
-        angular_vars = spatial_vector.angular_component.variables
-        linear_vals, angular_vals = split_list(vars, [len(linear_vars)])
-        self.linear_component.variables = linear_vars
-        self.angular_component.variables = angular_vars
-        self.linear_component.set_variable_values(linear_vals)
-        self.angular_component.set_variable_values(angular_vals)
+    def set_values(self, values, components=("lin_a", "lin_b", "lin_c", "lin_d", "ang_a", "ang_b", "ang_c", "ang_d")):
+        linear_components = ""
+        angular_components = ""
+        for comp in components:
+            if comp.startswith("lin_"):
+                linear_components += (comp[4])
+            if comp.startswith("ang_"):
+                angular_components += (comp[4])
+        linear_values, angular_values = split_list(values, [len(linear_components)])
+        self.linear_component.set_values(linear_values, linear_components)
+        self.angular_component.set_values(angular_values, angular_components)
 
     def __add__(self, other):
         self.frame.check_identity(other.frame)
@@ -227,18 +235,12 @@ class SpatialVector:
         self.frame.check_identity(other.frame)
         return self.__class__(self.linear_component-other.linear_component, self.angular_component-other.angular_component, frame=self.frame)
 
-
-    def integrate_motion(self, motionvector, dt):
-        linear_component = motionvector.linear_component * dt
-        angular_magnitude = motionvector.angular_component.get_magnitude()
-        angular_normal = motionvector.angular_component * (1/angular_magnitude)
-        angular_component = Versor(angular_normal, angular_magnitude*dt).hamilton(self.angular_component)
-        linear_component.variables = self.linear_component.variables
-        angular_component.symbol_components = self.angular_component.variables
-        return PoseVector(linear_component, angular_component, frame=self.frame)
-
     def as_matrix(self):
         return self.linear_component.as_matrix().col_join(self.angular_component.as_matrix())
+
+    def get_ndarray(self, subs=None):
+        import numpy
+        return numpy.array(self.as_matrix().evalf(subs)).astype(numpy.float64)[:, 0]
 
 
 class PoseVector(SpatialVector):
@@ -286,7 +288,7 @@ class PoseVector(SpatialVector):
     def transform_inertia(self, inertia):
         self.end_frame.check_identity(inertia.frame)
         rot_matrix = self.angular_component.to_rot_matrix()
-        result_mat = rot_matrix.dot(inertia.inertia_matrix).dot(rot_matrix.T)
+        result_mat = rot_matrix * inertia.inertia_matrix * rot_matrix.T
         new_com = self.angular_component.sandwich_mul(inertia.com) + self.linear_component
         return InertiaMoment(result_mat, new_com, inertia.mass, self.frame)
 
@@ -297,6 +299,15 @@ class PoseVector(SpatialVector):
         inverse_angular = self.angular_component.transpose()
         inverse_linear = inverse_angular.sandwich_mul(self.linear_component)*-1
         return PoseVector(inverse_linear, inverse_angular, frame=self.end_frame, end_frame=self.frame)
+
+    def integrate_motion(self, motionvector, dt):
+        linear_component = motionvector.linear_component * dt
+        angular_magnitude = motionvector.angular_component.get_magnitude()
+        angular_normal = motionvector.angular_component * (1/angular_magnitude)
+        angular_component = Versor(angular_normal, angular_magnitude*dt).hamilton(self.angular_component)
+        linear_component.symbol_components = self.linear_component.symbol_components
+        angular_component.symbol_components = self.angular_component.symbol_components
+        return PoseVector(linear_component, angular_component, frame=self.frame)
 
 
 class MotionVector(SpatialVector):
@@ -348,7 +359,7 @@ class InertiaMoment:
         """
         self.frame.check_identity(motion_vector.frame)
         omega_cross = motion_vector.angular_component.cross(self.com)
-        angular_component = self.inertia_matrix.dot(motion_vector.angular_component.as_explicit_matrix(values="bcd")).as_quaternion() \
+        angular_component = Quaternion.from_matrix(self.inertia_matrix * motion_vector.angular_component.as_matrix("bcd"), "bcd") \
                             + self.com.cross(omega_cross)*self.mass \
                             + self.com.cross(motion_vector.linear_component)*self.mass
         linear_component = (motion_vector.linear_component + omega_cross)*self.mass

@@ -48,6 +48,6 @@ setup(
     author_email='robot.inventor@gmail.com',
     url='https://github.com/Team4819/int_dynamics',
     keywords='frc first robotics',
-    install_requires=['theano', 'numpy'],
+    install_requires=['sympy'],
     packages=find_packages(),
     )

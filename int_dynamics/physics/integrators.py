@@ -1,9 +1,11 @@
 from .types import *
 import sympy
+#sympy.init_printing()
+
 
 class EulerIntegrator:
 
-    def __init__(self):
+    def __init__(self, math_library="math"):
         self.state_names = None
         self.state_symbols = None
         self.current_state = None
@@ -11,55 +13,77 @@ class EulerIntegrator:
         self.pose_symbols = None
         self.motion_symbols = None
         self.root_body = None
+
+        self.dt_symbol = None
+        self.dt_value = 0.1
         self.time = 0
 
-    def set_root_body(self, root_body):
+        self.forward_dynamics_func = None
+        self.sympy_functions = None
+
+        self.math_library = math_library
+
+    def build_simulation_expressions(self, root_body):
+        self.pose_symbols = root_body.get_pose_symbols()
+        self.motion_symbols = root_body.get_motion_symbols()
+        self.state_symbols = self.pose_symbols + self.motion_symbols
+        self.state_names = root_body.get_pose_symbol_components() + root_body.get_motion_symbol_components()
         self.root_body = root_body
-
-    def build_frames(self, root_body):
-        self.set_root_body(root_body)
-
-        default_pose = self.root_body.get_def_pose_vector()
-        default_motion = self.root_body.get_def_motion_vector()
-        self.default_state = default_pose + default_motion
-        self.state_names = ["state {}".format(i) for i in range(len(self.default_state))]
-        self.state_symbols = sympy.symbols(" ".join(self.state_names))
-        self.pose_symbols, self.motion_symbols = split_list(self.state_symbols, [len(default_pose)])
-
-        self.root_body.set_variable_values(self.pose_tensor, self.motion_tensor)
-        self.root_body.calculate_frames()
-
-    def build_simulation_tensors(self):
+        self.default_state = root_body.get_def_pose_symbol_values() + root_body.get_def_motion_symbol_values()
+        self.current_state = self.default_state[:]
+        print("begin c computation")
         # Compute the forward dynamics problem with the Composite-Rigid-Body algorithm
         # Get C (the force vector required for zero acceleration) from the RNEA inverse dynamics solver
-        crb_C = self.root_body.get_inverse_dynamics(self.motion_tensor*0)[0]
+        crb_C = Matrix([self.root_body.get_inverse_dynamics([0 for _ in self.motion_symbols])[0]]).T
+        #sympy.pprint(sympy.simplify(crb_C))
+        print("finished with c, beginning H computation")
         # Get H by successive calls to RNEA
         columns = []
-        for x in range(self.motion_tensor.shape[1]):
-            accel_vector = self.motion_tensor*0
-            accel_vector.columns[0][x] = 1
-            columns.append(self.root_body.get_inverse_dynamics(accel_vector)[0])
-        crb_H = ExplicitMatrix.hstack(columns)
-
-        forces = self.root_body.get_total_forces()
-
-        joint_accel = crb_H.solve(forces-crb_C)
-
-        self.dt = VariableNode(0.1)
-        new_joint_motion = self.motion_tensor + joint_accel*self.dt
-        new_joint_pose = self.root_body.integrate_motion(new_joint_motion, self.dt)
-        self.new_state = ExplicitMatrix.vstack([new_joint_pose, new_joint_motion])
+        for x in range(len(self.motion_symbols)):
+            columns.append(self.root_body.get_inverse_dynamics([1 if x == i else 0 for i in range(len(self.motion_symbols))])[0])
+        crb_H = Matrix(columns).T
+        print("Finished with H")
+        forces = Matrix([self.root_body.get_total_forces()]).T
+        print("begin solve")
+        joint_accel = crb_H.LUsolve(forces-crb_C)
+        print("end solve")
+        self.dt_symbol = sympy.symbols("dt")
+        joint_dv = joint_accel*self.dt_symbol
+        new_joint_motion = [self.motion_symbols[x] + joint_dv[x, 0] for x in range(len(joint_dv))]
+        print("begin motion integration")
+        new_joint_pose = self.root_body.integrate_motion(self.motion_symbols, self.dt_symbol)
+        print("end motion integration")
+        self.new_state = new_joint_pose + new_joint_motion
 
     def build_simulation_functions(self):
-        self.forward_dynamics_func = build_symbolic_function(self.new_state)
+        if self.math_library == "theano":
+            from sympy.printing.theanocode import theano_function
+            self.forward_dynamics_func = theano_function(self.state_symbols + [self.dt_symbol], self.new_state)
+        else:
+            print("begin lambdification")
+            self.sympy_functions = []
+            for name, expression in zip(self.state_names, self.new_state):
+                print("simplifying {}".format(name))
+                new_expr = sympy.simplify(expression)
+                print("lambdifying {}".format(name))
+                self.sympy_functions.append(sympy.lambdify(self.state_symbols + [self.dt_symbol], new_expr))
+            print("finish lambdification")
+            self.forward_dynamics_func = lambda args: [sympy_fun(args) for sympy_fun in self.sympy_functions]
 
-    def build_substitutions(self, state_matrix):
+    def build_state_substitutions(self):
+        subs = {
+            self.dt_symbol: self.dt_value
+        }
+        for i in range(len(self.state_symbols)):
+            subs[self.state_symbols[i]] = self.current_state[i]
+        return subs
 
-    def step_time(self, dt=0.1):
-        self.dt.set_value(dt)
-        new_state = self.forward_dynamics_func()
-        self.current_state.set_value(new_state)
-        self.time += dt
+    def step_time(self, dt=None):
+        if dt is not None:
+            self.dt_value = dt
+        new_state = self.forward_dynamics_func(self.current_state + [self.dt_value])
+        self.current_state = new_state
+        self.time += self.dt_value
 
     def get_time(self):
         return self.time

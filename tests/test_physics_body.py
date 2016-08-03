@@ -1,8 +1,10 @@
 import time
 
 from numpy.testing import assert_almost_equal
+import numpy as np
 
 from int_dynamics.physics import *
+import math
 
 
 def test_body_1():
@@ -10,9 +12,10 @@ def test_body_1():
     body = CubeBody(1, 1, 1, 1)
     world.add_child(body, joint_pose=PoseVector(variable=True), joint_motion=MotionVector(variable=True))
     integrator = EulerIntegrator()
-    integrator.build_frames(world)
-    integrator.build_simulation_tensors()
-    integrator.build_simulation_functions()
+    print("begin expression build")
+    integrator.build_simulation_expressions(world)
+    print("begin function compile")
+    #integrator.build_simulation_functions()
     while integrator.get_time() < 10:
         integrator.step_time()
 
@@ -32,9 +35,6 @@ def test_composite_body_positions():
     body_2.add_child(body_3, joint_pose=PoseVector(XYZVector(0, 0, 2)))
     body_2.add_child(body_4, joint_pose=PoseVector(XYZVector(2, 0, 0), Versor(XYZVector(1, 0, 0), math.pi / 4)))
     body_4.add_child(body_5, joint_pose=PoseVector(XYZVector(0, 5, 0)))
-
-    integrator = EulerIntegrator()
-    integrator.build_frames(world)
 
     s2o2 = math.sqrt(2) / 2
     assert_almost_equal(body_1.frame.root_pose.get_ndarray(), [0, 0, 4, 0, 1, 0, 0, 0])
@@ -80,12 +80,10 @@ def test_inverse_dynamics_articulated_2d():
     )
 
     integrator = EulerIntegrator()
-    integrator.build_frames(world)
-    accel_vector = ExplicitMatrix([[-1, 3, -5]])
+    integrator.build_simulation_expressions(world)
+    accel_vector = [-1, 3, -5]
     force_vector, root_forces = world.get_inverse_dynamics(accel_vector)
-    force_vector_array = force_vector.get_symbolic_array()
-    func = build_symbolic_function(force_vector_array)
-    assert_almost_equal(func(), [-166.8333333, -83.4166667, -50.25])
+    assert_almost_equal(np.array(Matrix(force_vector).evalf(subs=integrator.build_state_substitutions())).astype(np.float64)[:, 0], [-166.8333333, -83.4166667, -50.25])
 
 
 def test_inverse_dynamics_articulated_3d():
@@ -135,16 +133,13 @@ def test_inverse_dynamics_articulated_3d():
         joint_motion=MotionVector(XYZVector(0, 0, 0, symbols=False), Quaternion(0, 0, 0, 0, symbol_components="b"))
     )
 
-
     integrator = EulerIntegrator()
-    integrator.build_frames(world)
+    integrator.build_simulation_expressions(world)
 
-    accel_vector = ExplicitMatrix([[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]])
+    accel_vector = [0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
     force_vector, root_forces = world.get_inverse_dynamics(accel_vector)
-    force_vector_array = force_vector.get_symbolic_array()
-    func = build_symbolic_function(force_vector_array)
-    value = func()
-    assert_almost_equal(value, np.array([0, 0, 0, 0, 0, -25, 0, 0, 0, 25]))
+    assert_almost_equal(np.array(Matrix(force_vector).evalf(subs=integrator.build_state_substitutions())).astype(np.float64)[:, 0],
+                        [0, 0, 0, 0, 0, -25, 0, 0, 0, 25])
 
 
 
