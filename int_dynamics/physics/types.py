@@ -1,6 +1,6 @@
 import sympy
 from sympy.matrices import Matrix
-
+from sympy.logic import ITE
 
 class Frame:
     """
@@ -303,7 +303,7 @@ class PoseVector(SpatialVector):
     def integrate_motion(self, motionvector, dt):
         linear_component = motionvector.linear_component * dt
         angular_magnitude = motionvector.angular_component.get_magnitude()
-        angular_normal = motionvector.angular_component * (1/angular_magnitude)
+        angular_normal = motionvector.angular_component * sympy.Piecewise((0, angular_magnitude == 0), (angular_magnitude, True))
         angular_component = Versor(angular_normal, angular_magnitude*dt).hamilton(self.angular_component)
         linear_component.symbol_components = self.linear_component.symbol_components
         angular_component.symbol_components = self.angular_component.symbol_components

@@ -188,6 +188,20 @@ class Body:
             child_force_sum = ForceVector(frame=self.frame.root_pose.frame)
         return force_values, child_force_sum
 
+    def get_crb(self, accel_values):
+        force_values = []
+        inertia_components = []
+        for child in self.children:
+            inertia_components.append(child["body"].world_intertia)
+            # Load the acceleration values into a MotionVector we can work with
+            child_accel = MotionVector(frame=child["joint_motion"].frame)
+            motion_symbol_components = child["joint_motion"].get_symbol_components()
+            child_accel_vars, accel_values = split_list(accel_values, [len(motion_symbol_components)])
+            if 1 in child_accel_vars:
+                child_accel.set_values(child_accel_vars, motion_symbol_components)
+
+
+
     def get_total_forces(self):
         local_forces = []
         for child in self.children:
@@ -212,7 +226,7 @@ class Body:
             joint_motion.set_values(joint_motion_symbol_values, components=joint_motion_symbol_components)
             new_joint_pose = child["joint_pose"].integrate_motion(joint_motion, dt)
             pose_values.extend(new_joint_pose.get_values(components=child["joint_pose"].get_symbol_components()))
-            pose_values.append(child["body"].integrate_motion(child_motion_symbol_values, dt))
+            pose_values.extend(child["body"].integrate_motion(child_motion_symbol_values, dt))
         return pose_values
 
 
@@ -232,11 +246,11 @@ class WorldBody(Body):
 
 class CubeBody(Body):
 
-    def __init__(self, x_dim, y_dim, z_dim, body_mass):
+    def __init__(self, x_dim, y_dim, z_dim, body_mass, name=None):
         self.x_dim = x_dim
         self.y_dim = y_dim
         self.z_dim = z_dim
-        Body.__init__(self, body_mass)
+        Body.__init__(self, body_mass, name=name)
 
     def get_rigid_body_inertia(self):
         #https://en.wikipedia.org/wiki/List_of_moments_of_inertia

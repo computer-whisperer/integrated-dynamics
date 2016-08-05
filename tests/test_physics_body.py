@@ -15,9 +15,14 @@ def test_body_1():
     print("begin expression build")
     integrator.build_simulation_expressions(world)
     print("begin function compile")
-    #integrator.build_simulation_functions()
+    integrator.build_simulation_functions()
+    print("Starting simulation")
+    start_time = time.time()
     while integrator.get_time() < 10:
+        print("state at sim time {} was {}".format(integrator.get_time(), integrator.current_state))
         integrator.step_time()
+    print("10 time steps took {} seconds".format(start_time))
+    print("final state was {}".format(integrator.current_state))
 
 
 def test_composite_body_positions():
@@ -80,7 +85,7 @@ def test_inverse_dynamics_articulated_2d():
     )
 
     integrator = EulerIntegrator()
-    integrator.build_simulation_expressions(world)
+    integrator.init_symbols(world)
     accel_vector = [-1, 3, -5]
     force_vector, root_forces = world.get_inverse_dynamics(accel_vector)
     assert_almost_equal(np.array(Matrix(force_vector).evalf(subs=integrator.build_state_substitutions())).astype(np.float64)[:, 0], [-166.8333333, -83.4166667, -50.25])
@@ -90,17 +95,17 @@ def test_inverse_dynamics_articulated_3d():
     # five bodies, essentially a tank-drive robot
     world = WorldBody()
 
-    chassis = CubeBody(10, 2, 10, 20)
-    wheel_1 = CubeBody(1, 10, 10, 1)
-    wheel_2 = CubeBody(1, 10, 10, 1)
-    wheel_3 = CubeBody(1, 10, 10, 1)
-    wheel_4 = CubeBody(1, 10, 10, 1.5)
+    chassis = CubeBody(10, 2, 10, 20, name="chassis")
+    wheel_1 = CubeBody(1, 10, 10, 1, name="wheel_1")
+    wheel_2 = CubeBody(1, 10, 10, 1, name="wheel_2")
+    wheel_3 = CubeBody(1, 10, 10, 1, name="wheel_3")
+    wheel_4 = CubeBody(1, 10, 10, 1.5, name="wheel_4")
 
     world.add_child(
         chassis,
         pose=PoseVector(XYZVector(0, 0)),
         joint_base=PoseVector(XYZVector(0, 0)),
-        joint_pose=PoseVector(XYZVector(0, 0, 0, symbols=True), Versor(XYZVector(0, 1, 0), math.pi / 2, symbols=True)),
+        joint_pose=PoseVector(XYZVector(0, 0, 0, symbols=True), Versor(XYZVector(0, 1, 0), math.pi/2, symbols=True)),
         joint_motion=MotionVector(XYZVector(0, 0, 0, symbols=True), XYZVector(0, 0, 0, symbols=True))
     )
 
@@ -134,11 +139,14 @@ def test_inverse_dynamics_articulated_3d():
     )
 
     integrator = EulerIntegrator()
-    integrator.build_simulation_expressions(world)
+    integrator.init_symbols(world)
 
     accel_vector = [0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
     force_vector, root_forces = world.get_inverse_dynamics(accel_vector)
-    assert_almost_equal(np.array(Matrix(force_vector).evalf(subs=integrator.build_state_substitutions())).astype(np.float64)[:, 0],
+    force_vector_mat = Matrix(force_vector)
+    #sympy.preview(force_vector_mat, output="dvi")
+    print(integrator.build_state_substitutions())
+    assert_almost_equal(np.array(force_vector_mat.evalf(subs=integrator.build_state_substitutions())).astype(np.float64)[:, 0],
                         [0, 0, 0, 0, 0, -25, 0, 0, 0, 25])
 
 

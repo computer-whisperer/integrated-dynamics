@@ -1,6 +1,6 @@
 from .types import *
 import sympy
-#sympy.init_printing()
+sympy.init_printing()
 
 
 class EulerIntegrator:
@@ -18,12 +18,13 @@ class EulerIntegrator:
         self.dt_value = 0.1
         self.time = 0
 
+        self.new_state = None
+        self.new_state_mat = None
         self.forward_dynamics_func = None
-        self.sympy_functions = None
 
         self.math_library = math_library
 
-    def build_simulation_expressions(self, root_body):
+    def init_symbols(self, root_body):
         self.pose_symbols = root_body.get_pose_symbols()
         self.motion_symbols = root_body.get_motion_symbols()
         self.state_symbols = self.pose_symbols + self.motion_symbols
@@ -31,19 +32,22 @@ class EulerIntegrator:
         self.root_body = root_body
         self.default_state = root_body.get_def_pose_symbol_values() + root_body.get_def_motion_symbol_values()
         self.current_state = self.default_state[:]
+
+    def build_simulation_expressions(self, root_body):
+        self.init_symbols(root_body)
         print("begin c computation")
         # Compute the forward dynamics problem with the Composite-Rigid-Body algorithm
         # Get C (the force vector required for zero acceleration) from the RNEA inverse dynamics solver
-        crb_C = Matrix([self.root_body.get_inverse_dynamics([0 for _ in self.motion_symbols])[0]]).T
+        crb_C = sympy.simplify(Matrix([self.root_body.get_inverse_dynamics([0 for _ in self.motion_symbols])[0]]).T)
         #sympy.pprint(sympy.simplify(crb_C))
         print("finished with c, beginning H computation")
         # Get H by successive calls to RNEA
         columns = []
         for x in range(len(self.motion_symbols)):
             columns.append(self.root_body.get_inverse_dynamics([1 if x == i else 0 for i in range(len(self.motion_symbols))])[0])
-        crb_H = Matrix(columns).T
+        crb_H = sympy.simplify(Matrix(columns).T)
         print("Finished with H")
-        forces = Matrix([self.root_body.get_total_forces()]).T
+        forces = sympy.simplify(Matrix([self.root_body.get_total_forces()]).T)
         print("begin solve")
         joint_accel = crb_H.LUsolve(forces-crb_C)
         print("end solve")
@@ -54,21 +58,18 @@ class EulerIntegrator:
         new_joint_pose = self.root_body.integrate_motion(self.motion_symbols, self.dt_symbol)
         print("end motion integration")
         self.new_state = new_joint_pose + new_joint_motion
+        self.new_state_mat = Matrix([[state] for state in self.new_state])
 
     def build_simulation_functions(self):
         if self.math_library == "theano":
             from sympy.printing.theanocode import theano_function
+            print("building theano function")
             self.forward_dynamics_func = theano_function(self.state_symbols + [self.dt_symbol], self.new_state)
+            print("finished building theano function")
         else:
             print("begin lambdification")
-            self.sympy_functions = []
-            for name, expression in zip(self.state_names, self.new_state):
-                print("simplifying {}".format(name))
-                new_expr = sympy.simplify(expression)
-                print("lambdifying {}".format(name))
-                self.sympy_functions.append(sympy.lambdify(self.state_symbols + [self.dt_symbol], new_expr))
+            self.forward_dynamics_func = sympy.lambdify(self.state_symbols + [self.dt_symbol], self.new_state_mat)
             print("finish lambdification")
-            self.forward_dynamics_func = lambda args: [sympy_fun(args) for sympy_fun in self.sympy_functions]
 
     def build_state_substitutions(self):
         subs = {
@@ -81,7 +82,7 @@ class EulerIntegrator:
     def step_time(self, dt=None):
         if dt is not None:
             self.dt_value = dt
-        new_state = self.forward_dynamics_func(self.current_state + [self.dt_value])
+        new_state = self.forward_dynamics_func(*(self.current_state + [self.dt_value]))
         self.current_state = new_state
         self.time += self.dt_value
 
