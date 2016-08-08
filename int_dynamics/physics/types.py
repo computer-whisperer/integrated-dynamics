@@ -1,6 +1,8 @@
 import sympy
 from sympy.matrices import Matrix
-from sympy.logic import ITE
+import numpy # Required for workaround https://stackoverflow.com/questions/38040846/error-with-sympy-lambdify-for-piecewise-functions-and-numpy-module
+from . import integrators
+
 
 class Frame:
     """
@@ -146,7 +148,7 @@ class Quaternion:
 
     def get_ndarray(self, subs=None):
         import numpy
-        return numpy.array(self.as_matrix().evalf(subs)).astype(numpy.float64)[:, 0]
+        return numpy.array(self.as_matrix().evalf(subs=subs)).astype(numpy.float64)[:, 0]
 
 
 def XYZVector(x=0, y=0, z=0, symbols=False):
@@ -303,8 +305,14 @@ class PoseVector(SpatialVector):
     def integrate_motion(self, motionvector, dt):
         linear_component = motionvector.linear_component * dt
         angular_magnitude = motionvector.angular_component.get_magnitude()
-        angular_normal = motionvector.angular_component * sympy.Piecewise((0, angular_magnitude == 0), (angular_magnitude, True))
-        angular_component = Versor(angular_normal, angular_magnitude*dt).hamilton(self.angular_component)
+        angular_normal = motionvector.angular_component * (1/angular_magnitude)
+        #angular_normal.b = numpy.asarray(sympy.Piecewise((angular_normal.b, angular_magnitude > 0), (numpy.asarray(1), True)))
+        angular_delta = Versor(angular_normal, angular_magnitude*dt)
+        angular_component = angular_delta.hamilton(self.angular_component)
+        angular_comps = []
+        for old_val, new_val in zip(self.angular_component.get_values(), angular_component.get_values()):
+            angular_comps.append(sympy.Piecewise((numpy.asarray(new_val), angular_magnitude > 0), (old_val, True)))
+        angular_component.set_values(angular_comps)
         linear_component.symbol_components = self.linear_component.symbol_components
         angular_component.symbol_components = self.angular_component.symbol_components
         return PoseVector(linear_component, angular_component, frame=self.frame)

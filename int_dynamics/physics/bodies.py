@@ -190,17 +190,30 @@ class Body:
 
     def get_crb(self, accel_values):
         force_values = []
+        applied_force = None
         inertia_components = []
         for child in self.children:
-            inertia_components.append(child["body"].world_intertia)
+            inertia_components.append(child["body"].articulated_inertia)
             # Load the acceleration values into a MotionVector we can work with
             child_accel = MotionVector(frame=child["joint_motion"].frame)
             motion_symbol_components = child["joint_motion"].get_symbol_components()
-            child_accel_vars, accel_values = split_list(accel_values, [len(motion_symbol_components)])
-            if 1 in child_accel_vars:
-                child_accel.set_values(child_accel_vars, motion_symbol_components)
 
-
+            joint_accel_symbol_values, child_accel_symbol_values, accel_values = split_list(accel_values, [len(motion_symbol_components), len(child["body"].get_motion_symbol_components())])
+            if 1 in joint_accel_symbol_values:
+                child_accel.set_values(joint_accel_symbol_values, motion_symbol_components)
+                world_child_accel = child["joint_base_frame"].root_pose.transform_motion(child_accel)
+                child_force = child["body"].articulated_inertia.dot(world_child_accel)
+                force_values.extend(child_force.get_values(motion_symbol_components))
+                applied_force = child_force
+                break
+            elif 1 in child_accel_symbol_values:
+                child_force_values, child_applied_force = child["body"].get_crb(motion_symbol_components)
+                local_joint_force = child["joint_frame_base"].root_pose.inverse().transform_force(child_applied_force)
+                force_values.extend(local_joint_force.get_values(components=motion_symbol_components))
+                force_values.extend(child_force_values)
+        if self.articulated_inertia is None:
+            self.articulated_inertia = sum(inertia_components)
+        return force_values, applied_force
 
     def get_total_forces(self):
         local_forces = []
