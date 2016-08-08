@@ -10,11 +10,10 @@ import math
 def test_body_1():
     world = WorldBody()
     body = CubeBody(1, 1, 1, 1)
-    world.add_child(body, joint_pose=PoseVector(variable=True), joint_motion=MotionVector(variable=True))
+    world.add_child(body, joint_pose=PoseVector(variable=True), joint_motion=MotionVector(XYVector(0, 0, symbols=True), Angle(0, symbols=True)))
     integrator = EulerIntegrator()
     print("begin expression build")
     integrator.build_simulation_expressions(world)
-    print("begin function compile")
     integrator.build_simulation_functions()
     print("Starting simulation")
     start_time = time.time()

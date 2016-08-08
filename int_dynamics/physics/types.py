@@ -304,15 +304,17 @@ class PoseVector(SpatialVector):
 
     def integrate_motion(self, motionvector, dt):
         linear_component = motionvector.linear_component * dt
+        print(self.angular_component.get_ndarray(integrators.substitute_symbols))
         angular_magnitude = motionvector.angular_component.get_magnitude()
         angular_normal = motionvector.angular_component * (1/angular_magnitude)
-        #angular_normal.b = numpy.asarray(sympy.Piecewise((angular_normal.b, angular_magnitude > 0), (numpy.asarray(1), True)))
+        angular_normal.b = numpy.asarray(sympy.Piecewise((angular_normal.b, angular_magnitude > 0), (numpy.asarray(1), True)))
         angular_delta = Versor(angular_normal, angular_magnitude*dt)
         angular_component = angular_delta.hamilton(self.angular_component)
-        angular_comps = []
-        for old_val, new_val in zip(self.angular_component.get_values(), angular_component.get_values()):
-            angular_comps.append(sympy.Piecewise((numpy.asarray(new_val), angular_magnitude > 0), (old_val, True)))
-        angular_component.set_values(angular_comps)
+        #angular_comps = []
+        #for old_val, new_val in zip(self.angular_component.get_values(), angular_component.get_values()):
+        #    angular_comps.append(sympy.Piecewise((numpy.asarray(new_val), angular_magnitude > 0), (old_val, True)))
+        #angular_component.set_values(angular_comps)
+        print(self.angular_component.get_ndarray(integrators.substitute_symbols))
         linear_component.symbol_components = self.linear_component.symbol_components
         angular_component.symbol_components = self.angular_component.symbol_components
         return PoseVector(linear_component, angular_component, frame=self.frame)
