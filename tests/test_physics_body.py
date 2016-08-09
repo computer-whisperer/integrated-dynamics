@@ -7,22 +7,22 @@ from int_dynamics.physics import *
 import math
 
 
-def test_body_1():
+def test_single_body():
     world = WorldBody()
     body = CubeBody(1, 1, 1, 1)
-    world.add_child(body, joint_pose=PoseVector(variable=True), joint_motion=MotionVector(XYVector(0, 0, symbols=True), Angle(0, symbols=True)))
-    #world.add_child(body, joint_pose=PoseVector(variable=True), joint_motion=MotionVector(variable=True))
+    world.add_child(body, joint_pose=PoseVector(variable=True), joint_motion=MotionVector(variable=True))
     integrator = EulerIntegrator()
     print("begin expression build")
-    integrator.build_simulation_expressions(world)
+    integrator.build_simulation_expressions(world, MotionVector(XYZVector(0, 9.81, 0), frame=world.frame))
     integrator.build_simulation_functions()
     print("Starting simulation")
     start_time = time.time()
     while integrator.get_time() < 10:
         print("state at sim time {} was {}".format(integrator.get_time(), integrator.current_state))
         integrator.step_time()
-    print("10 time steps took {} seconds".format(start_time))
+    print("10 time steps took {} seconds".format(time.time()-start_time))
     print("final state was {}".format(integrator.current_state))
+    assert integrator.current_state[1] < 350
 
 
 def test_composite_body_positions():
