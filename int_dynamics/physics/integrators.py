@@ -54,9 +54,6 @@ class EulerIntegrator:
         # Get C (the force vector required for zero acceleration) from the RNEA inverse dynamics solver
         crb_C = Matrix([self.root_body.get_inverse_dynamics([0 for _ in self.motion_symbols])[0]]).T
         print(count_ops(crb_C))
-        crb_C = sympy.expand(crb_C)
-        #sympy.pprint(crb_C)
-        print(count_ops(crb_C))
         print("finished with c, beginning H computation")
         # Get H by CRB
         columns = [None for _ in range(len(self.motion_symbols))]
@@ -70,16 +67,11 @@ class EulerIntegrator:
                 columns[x][y] = columns[y][x]
         crb_H = Matrix(columns).T
         print(count_ops(crb_H))
-        crb_H = sympy.simplify(crb_H)
-        #sympy.pprint(crb_H)
-        print(count_ops(crb_H))
         print(crb_H.evalf(subs=self.build_state_substitutions()))
         print("Finished with H")
         forces = Matrix([self.root_body.get_total_forces()]).T
         print("begin solve")
         joint_accel = crb_H.LUsolve(forces-crb_C)
-        print(count_ops(joint_accel))
-        #joint_accel = joint_accel.simplify()
         print(count_ops(joint_accel))
         print("end solve")
 
@@ -92,12 +84,13 @@ class EulerIntegrator:
         self.new_state = new_joint_pose + new_joint_motion
         new_state_mat_unfactored = Matrix([self.new_state])
         start_time = time.time()
-        print("begin factorization")
+        print("begin cse")
         print(count_ops(new_state_mat_unfactored))
-        #self.new_state_mat = sympy.factor(new_state_mat_unfactored)
-        self.new_state_mat = new_state_mat_unfactored
-        print(count_ops(self.new_state_mat))
-        print("factorization took {} seconds".format(time.time()-start_time))
+        self.new_state_replacements, reduced_exprs = sympy.cse(new_state_mat_unfactored)
+        self.new_state_mat = reduced_exprs[0]
+        print(len(self.new_state_replacements))
+        print(count_ops(reduced_exprs[0]))
+        print("cse took {} seconds".format(time.time()-start_time))
         #print(self.new_state_mat.evalf(subs=substitute_symbols))
 
     def build_simulation_functions(self):
@@ -106,21 +99,32 @@ class EulerIntegrator:
         if self.math_library == "theano":
             from sympy.printing.theanocode import theano_function
             print("building theano function")
-            self.forward_dynamics_func = theano_function(self.state_symbols + [self.dt_symbol], self.new_state)
+            raw_new_state = self.new_state.subs(self.new_state_replacements)
+            self.forward_dynamics_func = theano_function(self.state_symbols + [self.dt_symbol], raw_new_state)
             print("finished building theano function")
         else:
             print("begin lambdification")
-            if self.math_library == "numpy":
-                # TODO: remove workaround when fixed https://github.com/sympy/sympy/issues/11306
-                args = []
-                for arg in self.state_symbols:
-                    args.append(numpy.asarray(arg))
-                args.append(self.dt_symbol)
-            self.forward_dynamics_func = sympy.lambdify(
+            pre_funcs = []
+            args = []
+            for arg in self.state_symbols:
+                args.append(numpy.asarray(arg))
+            args.append(self.dt_symbol)
+            for symbol, expr in self.new_state_replacements:
+                pre_funcs.append((symbol, sympy.lambdify(args, expr, modules=self.math_library, dummify=False)))
+                args.append(numpy.asarray(symbol))
+            final_func = sympy.lambdify(
                 args,
                 self.new_state_mat,
                 modules=self.math_library,
                 dummify=False)
+
+            def sympy_dynamics_func(*args_in):
+                args = [*args_in]
+                for symbol, func in pre_funcs:
+                    args.append(func(*args))
+                return final_func(*args)
+
+            self.forward_dynamics_func = sympy_dynamics_func
             print("finish lambdification")
         print("finished function build in {} seconds".format(time.time()-start_time))
 
