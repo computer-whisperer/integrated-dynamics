@@ -26,7 +26,7 @@ quadcopter.forces.append(sum(quad_forces))
 
 integrator = EulerIntegrator()
 integrator.build_simulation_expressions(world, MotionVector(XYVector(0, 9.81), frame=world.frame))
-integrator.build_simulation_functions()
+integrator.build_simulation_function()
 
 print("Starting simulation")
 start_time = time.time()

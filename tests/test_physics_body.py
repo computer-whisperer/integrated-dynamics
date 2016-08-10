@@ -13,8 +13,8 @@ def test_single_body():
     world.add_child(body, joint_pose=PoseVector(variable=True), joint_motion=MotionVector(variable=True))
     integrator = EulerIntegrator()
     print("begin expression build")
-    integrator.build_simulation_expressions(world, MotionVector(XYZVector(0, 9.81, 0), frame=world.frame))
-    integrator.build_simulation_functions()
+    integrator.build_simulation_expressions(world, MotionVector(XYZVector(0, 9.81, 0), frame=world.frame), autocache=False)
+    integrator.build_simulation_function()
     print("Starting simulation")
     start_time = time.time()
     while integrator.get_time() < 10:

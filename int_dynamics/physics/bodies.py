@@ -13,6 +13,8 @@ class Body:
 
         self.root_body = None
 
+        self.vertices = None
+
         self.body_mass = body_mass
         self.articulated_inertia = None
         self.total_mass = 0
@@ -143,7 +145,7 @@ class Body:
         :returns: A ForceVector with the sum of all forces applied by child joints, in world-space coordinates.
         """
         if frame_accel is None:
-            frame_accel = MotionVector(frame = self.frame)
+            frame_accel = MotionVector(frame=self.frame)
 
         # First thing is to build motion vectors from accel_vector
         force_values = [] # List of joint force variables
@@ -230,17 +232,22 @@ class Body:
         pose_values = []
         for child in self.children:
             joint_motion_symbol_components = child["joint_motion"].get_symbol_components()
+            joint_motion_values = child["joint_motion"].get_values()
             child_motion_symbol_components = child["body"].get_motion_symbol_components()
 
             joint_motion_symbol_values, child_motion_symbol_values, motion_symbol_values = \
                 split_list(motion_symbol_values, [len(joint_motion_symbol_components), len(child_motion_symbol_components)])
 
             joint_motion = MotionVector()
+            joint_motion.set_values(joint_motion_values)
             joint_motion.set_values(joint_motion_symbol_values, components=joint_motion_symbol_components)
             new_joint_pose = child["joint_pose"].integrate_motion(joint_motion, dt)
             pose_values.extend(new_joint_pose.get_values(components=child["joint_pose"].get_symbol_components()))
             pose_values.extend(child["body"].integrate_motion(child_motion_symbol_values, dt))
         return pose_values
+
+    def get_vertices(self):
+        raise NotImplementedError()
 
 
 class WorldBody(Body):
@@ -255,6 +262,14 @@ class WorldBody(Body):
 
     def get_rigid_body_inertia(self):
         return InertiaMoment(sympy.eye(3), XYZVector(), 0, self.frame)
+
+    def get_edges(self):
+        vertices = []
+        for child in self.children:
+            vertices.extend(child["body"].get_edges())
+        return vertices
+
+
 
 
 class CubeBody(Body):
@@ -272,3 +287,37 @@ class CubeBody(Body):
         z_sq = self.z_dim**2
         components = 1/12 * self.body_mass * XYZVector(y_sq + z_sq, x_sq + z_sq, x_sq + y_sq)
         return InertiaMoment(sympy.diag(components.b, components.c, components.d), XYZVector(), self.body_mass, self.frame)
+
+    def get_edges(self):
+        root_pose = self.frame.root_pose
+        hx = self.x_dim/2
+        hy = self.y_dim/2
+        hz = self.z_dim/2
+        v1 = root_pose.transform_vector(XYZVector(+hx, +hy, +hz))
+        v2 = root_pose.transform_vector(XYZVector(+hx, +hy, -hz))
+        v3 = root_pose.transform_vector(XYZVector(+hx, -hy, +hz))
+        v4 = root_pose.transform_vector(XYZVector(+hx, -hy, -hz))
+        v5 = root_pose.transform_vector(XYZVector(-hx, +hy, +hz))
+        v6 = root_pose.transform_vector(XYZVector(-hx, +hy, -hz))
+        v7 = root_pose.transform_vector(XYZVector(-hx, -hy, +hz))
+        v8 = root_pose.transform_vector(XYZVector(-hx, -hy, -hz))
+        vertices = [
+            (v1, v2),
+            (v1, v3),
+            (v1, v5),
+            (v2, v4),
+            (v2, v6),
+            (v3, v4),
+            (v3, v7),
+            (v4, v8),
+            (v5, v6),
+            (v5, v7),
+            (v6, v8),
+            (v7, v8)
+        ]
+        for child in self.children:
+            vertices.extend(child["body"].get_edges())
+        return vertices
+
+
+

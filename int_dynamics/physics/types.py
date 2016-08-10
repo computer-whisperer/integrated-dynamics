@@ -255,6 +255,13 @@ class PoseVector(SpatialVector):
         self.end_frame = end_frame
         SpatialVector.__init__(self, linear_component, angular_component, frame=frame)
 
+    def transform_vector(self, vector):
+        """
+        :param vector: An XYZVector relative to this pose's endpoint
+        :return: vector in coordinates relative to this pose's root
+        """
+        return self.angular_component.sandwich_mul(vector) + self.linear_component
+
     def transform_pose(self, pose):
         """
         :param pose: A pose relative to this pose's endpoint

@@ -1,6 +1,8 @@
 from .types import *
+from .utilities import *
 import sympy
 import time
+import pickle
 sympy.init_printing()
 
 
@@ -16,7 +18,8 @@ def count_ops(mat):
 
 class EulerIntegrator:
 
-    def __init__(self, math_library="numpy"):
+    def __init__(self, name=None, math_library="numpy"):
+        self.name = name or self.__class__.__name__
         self.state_names = None
         self.state_symbols = None
         self.current_state = None
@@ -35,6 +38,11 @@ class EulerIntegrator:
 
         self.math_library = math_library
 
+        self.vertices = None
+        self.edge_matrix = None
+        self.edge_matrix_components = None
+        self.edge_func = None
+
 
     def init_symbols(self, root_body):
         global substitute_symbols
@@ -47,10 +55,11 @@ class EulerIntegrator:
         self.current_state = self.default_state[:]
         self.dt_symbol = sympy.symbols("dt")
         substitute_symbols = self.build_state_substitutions()
+        self.vertices = root_body.get_edges()
 
-    def build_simulation_expressions(self, root_body, root_accel=None):
+    def build_simulation_expressions(self, root_body, root_accel=None, autocache=True):
         self.init_symbols(root_body)
-        print("begin c computation")
+        print("Building crb_C")
         # Compute the forward dynamics problem with the Composite-Rigid-Body algorithm
         # Get C (the force vector required for zero acceleration) from the RNEA inverse dynamics solver
         crb_C = Matrix([self.root_body.get_inverse_dynamics([0 for _ in self.motion_symbols], root_accel)[0]]).T
@@ -58,7 +67,7 @@ class EulerIntegrator:
 #        self.new_state_components.extend(components)
 #        crb_C = reduced_exprs[0]
         #print(count_ops(crb_C))
-        print("finished with c, beginning H computation")
+        print("Building crb_H")
         # Get H by CRB
         columns = [None for _ in range(len(self.motion_symbols))]
         for x in reversed(range(len(self.motion_symbols))):
@@ -75,16 +84,13 @@ class EulerIntegrator:
 #        crb_H = reduced_exprs[0]
         #print(count_ops(crb_H))
         #print(crb_H.evalf(subs=self.build_state_substitutions()))
-        print("Finished with H")
         forces = Matrix([self.root_body.get_total_forces()]).T
-        print("begin solve")
+        print("Begin solve")
         joint_accel = crb_H.LUsolve(forces-crb_C)
-        #print(count_ops(joint_accel))
-        print("end solve")
 
         start_time = time.time()
-        print("begin cse")
-        self.new_state_components, reduced_exprs = sympy.cse(joint_accel)
+        print("Begin cse")
+        self.new_state_components, reduced_exprs = sympy.cse(joint_accel, order="none")
         joint_accel = reduced_exprs[0]
         print("cse took {} seconds".format(time.time()-start_time))
         print(count_ops(reduced_exprs[0]))
@@ -92,48 +98,36 @@ class EulerIntegrator:
 
         joint_dv = joint_accel*self.dt_symbol
         new_joint_motion = [self.motion_symbols[x] + joint_dv[x, 0] for x in range(len(joint_dv))]
-        print("begin motion integration")
+        print("Begin motion integration")
         new_joint_pose = self.root_body.integrate_motion(new_joint_motion, self.dt_symbol)
-
-        print("end motion integration")
         self.new_state = new_joint_pose + new_joint_motion
         self.new_state = Matrix([self.new_state])
+        print("Finished simulation expression build.")
 
+        print("Building vertex expressions")
+        edge_matrix = Matrix([vert_1.get_values('bcd') + vert_2.get_values('bcd') for vert_1, vert_2 in self.vertices])
+        self.edge_matrix_components, reduced_exprs = sympy.cse(edge_matrix, order='none')
+        self.edge_matrix = reduced_exprs[0]
 
-    def build_simulation_functions(self):
-        print("begin function compile")
-        start_time = time.time()
-        if self.math_library == "theano":
-            from sympy.printing.theanocode import theano_function
-            print("building theano function")
-            #raw_new_state = self.new_state.subs(self.new_state_replacements)
-            self.forward_dynamics_func = theano_function(self.state_symbols + [self.dt_symbol], raw_new_state)
-            print("finished building theano function")
-        else:
-            print("begin lambdification")
-            pre_funcs = []
-            for symbol, expr in self.new_state_components:
-                needed_symbols = expr.atoms(sympy.Symbol)
-                pre_funcs.append((symbol, needed_symbols, sympy.lambdify(needed_symbols, expr, modules=self.math_library, dummify=False)))
-            final_needed_symbols = self.new_state.atoms(sympy.Symbol)
-            final_func = sympy.lambdify(
-                final_needed_symbols,
-                self.new_state,
-                modules=self.math_library,
-                dummify=False)
+        if autocache:
+            self.cache_integrator("{}.pkl".format(self.name))
+            self.cache_integrator("autocache.pkl".format(self.name))
 
-            def sympy_dynamics_func(*args_in):
-                values = self.build_state_substitutions()
-                for symbol, needed_symbols, func in pre_funcs:
-                    args = [numpy.asarray(float(values[s])) for s in needed_symbols]
-                    result = func(*args)
-                    values[symbol] = result
-                args = [values[s] for s in final_needed_symbols]
-                return final_func(*args)
+    def build_simulation_function(self):
+        self.forward_dynamics_func = build_function(
+            self.new_state,
+            self.new_state_components,
+            self.state_symbols + [self.dt_symbol],
+            self.math_library
+        )
 
-            self.forward_dynamics_func = sympy_dynamics_func
-            print("finish lambdification")
-        print("finished function build in {} seconds".format(time.time()-start_time))
+    def build_rendering_function(self):
+        self.edge_func = build_function(
+            self.edge_matrix,
+            self.edge_matrix_components,
+            self.state_symbols + [self.dt_symbol],
+            self.math_library
+        )
 
     def build_state_substitutions(self):
         subs = {
@@ -142,6 +136,18 @@ class EulerIntegrator:
         for i in range(len(self.state_symbols)):
             subs[self.state_symbols[i]] = self.current_state[i]
         return subs
+
+    def get_edges(self):
+        edge_mat = self.edge_func(*(self.current_state + [self.dt_value]))
+        return [(edge_mat[edge, :3].tolist(), edge_mat[edge, 3:].tolist()) for edge in range(edge_mat.shape[0])]
+
+    def opengl_draw(self):
+        from OpenGL import GL
+        GL.glBegin(GL.GL_LINES)
+        for vert_1, vert_2 in self.get_edges():
+            GL.glVertex3fv(vert_1)
+            GL.glVertex3fv(vert_2)
+        GL.glEnd()
 
     def step_time(self, dt=None):
         if dt is not None:
@@ -154,3 +160,13 @@ class EulerIntegrator:
     def get_time(self):
         return self.time
 
+    def reset_simulation(self):
+        self.time = 0
+        self.current_state = self.default_state[:]
+
+    def cache_integrator(self, path):
+        start_time = time.time()
+        print("starting integrator cache to {}".format(path))
+        with open(path, 'wb') as f:
+            pickle.dump(self, f, -1)
+        print("integrator cache took {} seconds".format(time.time() - start_time))
