@@ -1,5 +1,7 @@
 import sympy
+from sympy.physics import vector
 from .types import *
+
 
 
 class Body:
@@ -9,9 +11,11 @@ class Body:
         if name is None:
             name = self.__class__.__name__
         self.name = name
-        self.frame = Frame(name=name)
 
-        self.root_body = None
+        self.frame = vector.ReferenceFrame(name)
+        self.point = vector.Point(name)
+        self.position_symbols = []
+        self.motion_symbols = []
 
         self.vertices = None
 
@@ -21,59 +25,16 @@ class Body:
         self.forces = []
         self.net_force = None
 
-    def add_child(self, body, pose=None, joint_base=None, joint_pose=None, joint_motion=None):
-        """
-        Add an articulated child to this body.
-        The type of joint is controlled by the variables set in joint_motion.
-        Each joint has four frames associated with it: parent body, joint base, joint end, and child body
+    def add_child(self, body, joint):
 
-        :param body: The body instance to add.
-        :param body_pose: The pose of the child relative to the joint.
-        :param joint_base: The pose of the joint base in local frame coordinates.(optional)
-        :param joint_pose: The initial pose of the joint, with variables corresponding to degrees of freedom (optional).
-        :param joint_motion: The initial motion of this joint, with variables corresponding to degrees of freedom (optional).
-        """
+        body.joint = joint
+        self.children.append(body)
+        joint.init_symbols(self, body)
+        joint.init_frames()
 
-        if pose is None:
-            pose = PoseVector()
-        if joint_base is None:
-            joint_base = PoseVector()
-        if joint_pose is None:
-            joint_pose = PoseVector()
-        if joint_motion is None:
-            joint_motion = MotionVector()
-
-
-        joint_pose.init_symbols(body.name+"_joint_pose")
-        joint_motion.init_symbols(body.name+"_joint_motion")
-
-        joint_frame_base = Frame(name="joint_base_{}_{}".format(self.name, body.name))
-        joint_frame_end = Frame(name="joint_end_{}_{}".format(self.name, body.name))
-
-        joint_base.frame = self.frame
-        joint_base.end_frame = joint_frame_base
-        joint_pose.frame = joint_frame_base
-        joint_pose.end_frame = joint_frame_end
-        joint_motion.frame = joint_frame_base
-        pose.frame = joint_frame_end
-        pose.end_frame = body.frame
-
-        joint_frame_base.set_parent_frame(self.frame, joint_base)
-        joint_frame_end.set_parent_frame(joint_frame_base, joint_pose, joint_motion)
-        body.frame.set_parent_frame(joint_frame_end, pose)
         body.local_inertia = body.get_rigid_body_inertia()
         body.world_inertia = body.frame.root_pose.transform_inertia(body.local_inertia)
 
-        self.children.append({
-            "body": body,
-            "pose": pose,
-            "joint_base": joint_base,
-            "joint_pose": joint_pose,
-            "joint_motion": joint_motion,
-            "joint_forces": [],
-            "joint_frame_base": joint_frame_base,
-            "joint_frame_end": joint_frame_end
-        })
 
     def get_all_children(self):
         result = []

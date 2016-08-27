@@ -52,3 +52,7 @@ def build_function(expression, components, arguments, math_library):
         print("finish lambdification")
     print("finished function build in {} seconds".format(time.time()-start_time))
     return result_func
+
+
+def list_to_vector(frame, value):
+    return sum([a*b for a, b in zip([frame.x, frame.y, frame.z], value)])

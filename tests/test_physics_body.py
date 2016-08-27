@@ -10,7 +10,7 @@ import math
 def test_single_body():
     world = WorldBody()
     body = CubeBody(1, 1, 1, 1)
-    world.add_child(body, joint_pose=PoseVector(variable=True), joint_motion=MotionVector(variable=True), joint_axes="x")
+    world.add_child(body, Joint.free_joint())
     integrator = EulerIntegrator()
     print("begin expression build")
     integrator.build_simulation_expressions(world, MotionVector(XYZVector(0, 9.81, 0), frame=world.frame), autocache=False)
