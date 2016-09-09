@@ -43,7 +43,6 @@ class EulerIntegrator:
         self.edge_func = None
         self.symbol_substitutions = None
 
-
     def init_symbols(self, root_body):
         global substitute_symbols
         self.pose_symbols = root_body.get_pose_symbols()
