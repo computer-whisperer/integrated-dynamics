@@ -13,7 +13,7 @@ class Body:
 
         self.frame = vector.ReferenceFrame(name)
         self.point = vector.Point(name)
-        self.particle = mechanics.Particle(self.name, self.point, body_mass)
+
         self.position_symbols = []
         self.motion_symbols = []
 
@@ -37,8 +37,7 @@ class Body:
         joint.init_frames(root_frame=self.root_body.frame)
 
         body.local_inertia = body.get_rigid_body_inertia()
-        body.articulated_inertia = body.local_inertia
-        #body.world_inertia = body.frame.root_pose.transform_inertia(body.local_inertia)
+        body.rigid_body = mechanics.RigidBody(body.name, body.point, body.body_mass, body.local_inertia)
 
     def get_all_children(self):
         result = []
@@ -175,13 +174,16 @@ class Body:
 
         self.articulated_mass = sum(mass_components)
         self.articulated_com = sum([a*b for a, b in zip(mass_components, com_components)])/self.articulated_mass
+        new_inertia_components = []
         for inertia, com in zip(inertia_components, com_components):
             com_comp = com.to_matrix(self.frame)
-            c_tilde = mechanics.inertia(0, -com_comp[2], com_comp[1],
-                                        com_comp[2], 0, -com_comp[0],
-                                        -com_comp[1], com_comp[0], 0)
+            x = com_comp[0]
+            y = com_comp[1]
+            z = com_comp[2]
+            new_inertia_components.append(
+                inertia + mechanics.inertia(self.frame, y*y + z*z, x*x + z*z, x*x + y*y, -x*y, -y*z, -z*x)
+            )
         self.articulated_inertia = sum([a*b for a, b in zip(inertia_components, com_components)])
-        #TODO calculate articulated inertia and mass
         return force_subs, applied_force_lin, applied_force_ang
 
     def get_total_forces(self):

@@ -7,6 +7,7 @@ class Joint:
 
     state_symbols = None
     state_defaults = None
+    state_symbol_derivatives = None
     parent_body = None
     child_body = None
 
@@ -106,6 +107,7 @@ class Joint:
         self.parent_body = parent_body
         self.child_body = child_body
         self.state_symbols = {}
+        self.state_symbol_derivatives = {}
         self.state_defaults = {}
 
         for component in self.symbolic_axes:
@@ -134,24 +136,20 @@ class Joint:
         self.end_point.v2pt_theory(self.base_point, root_frame, self.end_frame)
         self.end_point.a2pt_theory(self.base_point, root_frame, self.end_frame)
 
-    def set_symbol(self, component, symbol=None):
-        symbol = symbol or self.new_state_symbol(component)
+    def set_symbol(self, component, symbol=None, d_symbol=None):
+        full_name = "_".join([component, self.parent_body.name, self.child_body.name])
+        symbol = symbol or vector.dynamicsymbols(full_name)
+        d_symbol = d_symbol or vector.dynamicsymbols(full_name, 1)
         state_vector = getattr(self, component[:-2])
         element = {"w": -4, "x": -3, "y": -2, "z": -1}[component[-1]]
         def_val = state_vector[element]
         state_vector[element] = symbol
         self.state_symbols[component] = symbol
         self.state_defaults[symbol] = def_val
+        self.state_symbol_derivatives[symbol] = d_symbol
 
         if component.startswith("joint_pose_ang") and not isinstance(self.joint_pose_ang[0], sympy.Symbol):
             self.set_symbol(sympy.symbols("joint_pose_ang_{}"))
-
-    def new_state_symbol(self, component):
-        name = "_".join([component, self.parent_body.name, self.child_body.name])
-        if component.startswith("joint_motion"):
-            return vector.dynamicsymbols(name)
-        else:
-            return sympy.symbols(name)
 
     def get_pose_symbolic_axes(self):
         pose_symbol_axes = []
