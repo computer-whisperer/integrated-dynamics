@@ -1,5 +1,6 @@
 import time
 import sympy
+from sympy import physics
 import numpy
 
 
@@ -18,12 +19,10 @@ def build_function(expression, components, arguments, math_library):
         for symbol in components:
             needed_symbols = components[symbol].atoms(sympy.Symbol)
             symbol_funcs[symbol] = (needed_symbols, sympy.lambdify(needed_symbols, components[symbol], modules=math_library, dummify=False))
-        final_needed_symbols = expression.atoms(sympy.Symbol)
+        #final_needed_symbols = expression.atoms(sympy.Symbol)
         final_func = sympy.lambdify(
-            final_needed_symbols,
-            expression,
-            modules=math_library,
-            dummify=False)
+            arguments,
+            expression)
 
         def resolve_substitute(symbol, values):
             needed_symbols, func = symbol_funcs[symbol]
@@ -43,7 +42,7 @@ def build_function(expression, components, arguments, math_library):
             for arg, val in zip(arguments, arg_values):
                 values[arg] = numpy.asarray(float(val))
             args = []
-            for symbol in final_needed_symbols:
+            for symbol in arguments:
                 if symbol not in values:
                     resolve_substitute(symbol, values)
                 args.append(values[symbol])
@@ -55,4 +54,4 @@ def build_function(expression, components, arguments, math_library):
 
 
 def list_to_vector(frame, value):
-    return sum([a*b for a, b in zip([frame.x, frame.y, frame.z], value)])
+    return value[0]*frame.x + value[1]*frame.y + value[2]*frame.z

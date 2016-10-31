@@ -1,6 +1,5 @@
 import sympy
 from sympy.physics import vector, mechanics
-from .types import *
 
 
 class Body:
@@ -13,6 +12,7 @@ class Body:
 
         self.frame = vector.ReferenceFrame(name)
         self.point = vector.Point(name)
+        self.point.set_vel(self.frame, 0)
 
         self.position_symbols = []
         self.motion_symbols = []
@@ -26,6 +26,8 @@ class Body:
         self.articulated_mass = body_mass
         self.articulated_com = 0
 
+        self.rigid_body = None
+
         self.forces = []
         self.net_force = None
 
@@ -37,7 +39,7 @@ class Body:
         joint.init_frames(root_frame=self.root_body.frame)
 
         body.local_inertia = body.get_rigid_body_inertia()
-        body.rigid_body = mechanics.RigidBody(body.name, body.point, body.body_mass, body.local_inertia)
+        body.rigid_body = mechanics.RigidBody(body.name, body.point, body.frame, body.body_mass, (body.local_inertia, body.point))
 
     def get_all_children(self):
         result = []
@@ -91,100 +93,12 @@ class Body:
     def get_rigid_body_inertia(self):
         raise NotImplementedError()
 
-    def get_inverse_dynamics(self, root_frame, root_point, accel_subs):
-
-        force_subs = {}
-        lin_forces = []
-        ang_forces = []
-
+    def get_force_tuples(self):
+        force_tuples = []
+        force_tuples.extend(self.forces)
         for child in self.children:
-            # These are the world accelerations for the child link
-            child_world_accel_lin, child_world_accel_ang = (x.subs(accel_subs) for x in child.joint.get_rel_acc(root_frame, root_point))
-            # Get the forces exerted on this link by grand-child joints
-            child_force_subs, child_joint_forces_lin, child_joint_forces_ang = child.get_inverse_dynamics(root_frame,
-                                                                                                    root_point,
-                                                                                                    accel_subs)
-            # These are the forces that cause the above accelerations
-            link_lin_force = self.body_mass*child_world_accel_lin + child_joint_forces_lin
-            link_ang_force = self.local_inertia*child_world_accel_ang + child_joint_forces_ang
-
-            # Find the joint force that causes the above link force
-            joint_lin_force = link_lin_force
-            joint_ang_force = link_ang_force + child.joint.end_point.pos_from(child.joint.base_point).cross(link_lin_force)
-
-            force_subs.update(child.joint.get_force_substitutions(joint_lin_force, joint_ang_force))
-
-            parent_lin_force = joint_lin_force
-            parent_ang_force = joint_ang_force + child.joint.base_point.pos_from(self.point).cross(joint_lin_force)
-
-            lin_forces.append(parent_lin_force)
-            ang_forces.append(parent_ang_force)
-
-        return force_subs, sum(lin_forces), sum(ang_forces)
-
-    def get_crb(self, root_frame, root_point, accel_subs):
-
-        force_subs = {}
-        applied_force_lin = 0
-        applied_force_ang = 0
-        inertia_components = [self.articulated_inertia]
-        mass_components = [self.articulated_mass]
-        com_components = [self.articulated_com]
-
-        for child in self.children:
-            inertia_components.append(child.articulated_inertia)
-            mass_components.append(child.articulated_mass)
-            com_components.append(child.joint.end_point.pos_from(self.point) + child.articulated_com)
-
-            # These are the world accelerations for the child link
-            child_world_accel_lin, child_world_accel_ang = (x.subs(accel_subs) for x in
-                                                            child.joint.get_rel_acc(root_frame, root_point))
-
-            #joint_accel_symbol_values, child_accel_symbol_values, accel_values = split_list(accel_values, [len(motion_symbol_components), len(child["body"].get_motion_symbol_components())])
-            if child_world_accel_lin != 0 or child_world_accel_ang != 0:
-
-                # These are the forces that cause the above accelerations
-                link_lin_force = child.articulated_mass * child_world_accel_lin
-                link_ang_force = child.articulated_inertia * child_world_accel_ang
-
-                # Find the joint force that causes the above link force
-                joint_lin_force = link_lin_force
-                joint_ang_force = link_ang_force + child.joint.end_point.pos_from(child.joint.base_point).cross(
-                    link_lin_force)
-
-                force_subs.update(child.joint.get_force_substitutions(joint_lin_force, joint_ang_force))
-
-                # Transform force to parent link coordinates
-                applied_force_lin += joint_lin_force
-                applied_force_ang += joint_ang_force + child.joint.base_point.pos_from(self.point).cross(joint_lin_force)
-                break
-            else:
-                child_force_subs, child_applied_force_lin, child_applied_force_ang = child.get_crb(root_frame, root_point, accel_subs)
-
-                # Transform force to joint coordinates
-                joint_lin_force = child_applied_force_lin
-                joint_ang_force = child_applied_force_ang + child.joint.end_point.pos_from(child.joint.base_point).cross(
-                    child_applied_force_lin)
-
-                force_subs.update(child.joint.get_force_substitutions(joint_lin_force, joint_ang_force))
-
-                # Transform force to parent link coordinates
-                applied_force_lin += joint_lin_force
-                applied_force_ang += joint_ang_force + child.joint.base_point.pos_from(self.point).cross(joint_lin_force)
-
-        self.articulated_mass = sum(mass_components)
-        self.articulated_com = sum([a*b for a, b in zip(mass_components, com_components)])/self.articulated_mass
-        new_inertia_components = []
-        for inertia, com in zip(inertia_components, com_components):
-            com_comp = com.to_matrix(self.frame)
-            x = com_comp[0]
-            y = com_comp[1]
-            z = com_comp[2]
-            new_inertia_components.append(
-                inertia + mechanics.inertia(self.frame, y*y + z*z, x*x + z*z, x*x + y*y, -x*y, -y*z, -z*x)
-            )
-        self.articulated_inertia = sum([a*b for a, b in zip(inertia_components, com_components)])
-        return force_subs, applied_force_lin, applied_force_ang
+            force_tuples.extend(child.get_force_tuples())
+        return force_tuples
 
     def get_total_forces(self):
         local_forces = []
@@ -197,35 +111,20 @@ class Body:
             local_forces.extend(child["body"].get_total_forces())
         return local_forces
 
-    def integrate_motion(self, motion_symbol_values, dt):
-        pose_values = []
-        for child in self.children:
-            joint_motion_symbol_components = child["joint_motion"].get_symbol_components()
-            joint_motion_values = child["joint_motion"].get_values()
-            child_motion_symbol_components = child["body"].get_motion_symbol_components()
-
-            joint_motion_symbol_values, child_motion_symbol_values, motion_symbol_values = \
-                split_list(motion_symbol_values, [len(joint_motion_symbol_components), len(child_motion_symbol_components)])
-
-            joint_motion = MotionVector()
-            joint_motion.set_values(joint_motion_values)
-            joint_motion.set_values(joint_motion_symbol_values, components=joint_motion_symbol_components)
-            new_joint_pose = child["joint_pose"].integrate_motion(joint_motion, dt)
-            pose_values.extend(new_joint_pose.get_values(components=child["joint_pose"].get_symbol_components()))
-            pose_values.extend(child["body"].integrate_motion(child_motion_symbol_values, dt))
-        return pose_values
-
     def get_edges(self):
         raise NotImplementedError()
 
-    def get_substitutions(self):
-        substitutions = {}
+    def get_derivative_substitutions(self):
+        substiutions = self.joint.get_derivative_substitutions()
         for child in self.children:
-            substitutions.update(child["body"].get_substitutions())
-            substitutions.update(child["joint_frame_base"].get_substitutions())
-            substitutions.update(child["joint_frame_end"].get_substitutions())
-            substitutions.update(child["body"].frame.get_substitutions())
-        return substitutions
+            substiutions.update(child.get_derivative_substitutions())
+        return substiutions
+
+    def get_sympy_rigid_bodies(self):
+        rigid_bodies = [self.rigid_body]
+        for child in self.children:
+            rigid_bodies.extend(child.get_sympy_rigid_bodies())
+        return rigid_bodies
 
 
 class WorldBody(Body):
@@ -235,16 +134,27 @@ class WorldBody(Body):
 
     def __init__(self):
         Body.__init__(self, 0)
-        self.frame.root_pose = PoseVector(frame=self.frame, end_frame=self.frame)
-        self.frame.root_motion = MotionVector(frame=self.frame)
 
     def get_rigid_body_inertia(self):
         return mechanics.inertia(self.frame, 1, 1, 1)
 
+    def get_derivative_substitutions(self):
+        substitutions = {}
+        for child in self.children:
+            substitutions.update(child.get_derivative_substitutions())
+        return substitutions
+
+    def get_sympy_rigid_bodies(self):
+        rigid_bodies = []
+        for child in self.children:
+            rigid_bodies.extend(child.get_sympy_rigid_bodies())
+        return rigid_bodies
+
+
     def get_edges(self):
         vertices = []
         for child in self.children:
-            vertices.extend(child["body"].get_edges())
+            vertices.extend(child.get_edges())
         return vertices
 
 
@@ -266,18 +176,18 @@ class CubeBody(Body):
         return mechanics.inertia(self.frame, *components)
 
     def get_edges(self):
-        root_pose = self.frame.root_pose
-        hx = self.x_dim/2
-        hy = self.y_dim/2
-        hz = self.z_dim/2
-        v1 = root_pose.transform_vector(XYZVector(+hx, +hy, +hz))
-        v2 = root_pose.transform_vector(XYZVector(+hx, +hy, -hz))
-        v3 = root_pose.transform_vector(XYZVector(+hx, -hy, +hz))
-        v4 = root_pose.transform_vector(XYZVector(+hx, -hy, -hz))
-        v5 = root_pose.transform_vector(XYZVector(-hx, +hy, +hz))
-        v6 = root_pose.transform_vector(XYZVector(-hx, +hy, -hz))
-        v7 = root_pose.transform_vector(XYZVector(-hx, -hy, +hz))
-        v8 = root_pose.transform_vector(XYZVector(-hx, -hy, -hz))
+        hx = self.frame.x*self.x_dim/2
+        hy = self.frame.y*self.y_dim/2
+        hz = self.frame.z*self.z_dim/2
+        center_pos = self.point.pos_from(self.root_body.point)
+        v1 = (center_pos + hx + hy + hz).to_matrix(self.root_body.frame)
+        v2 = (center_pos + hx + hy - hz).to_matrix(self.root_body.frame)
+        v3 = (center_pos + hx - hy + hz).to_matrix(self.root_body.frame)
+        v4 = (center_pos + hx - hy - hz).to_matrix(self.root_body.frame)
+        v5 = (center_pos - hx + hy + hz).to_matrix(self.root_body.frame)
+        v6 = (center_pos - hx + hy - hz).to_matrix(self.root_body.frame)
+        v7 = (center_pos - hx - hy + hz).to_matrix(self.root_body.frame)
+        v8 = (center_pos - hx - hy - hz).to_matrix(self.root_body.frame)
         vertices = [
             (v1, v2),
             (v1, v3),
@@ -293,7 +203,7 @@ class CubeBody(Body):
             (v7, v8)
         ]
         for child in self.children:
-            vertices.extend(child["body"].get_edges())
+            vertices.extend(child.get_edges())
         return vertices
 
 

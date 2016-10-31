@@ -3,24 +3,31 @@ import math
 
 world = WorldBody()
 link_1 = CubeBody(0.1, 1, 0.1, 1, name="link_1")
-link_2 = CubeBody(0.5, 0.5, 0.1, 2, name="link_2")
+link_1.forces.append((link_1.point, world.frame.y*(-9.81)*link_1.body_mass))
+#link_2 = CubeBody(0.5, 0.5, 0.1, 2, name="link_2")
 
+joint_1 = Joint.elbow_joint(
+    joint_base_lin=[0, 2, 0],
+    joint_motion_ang=[math.pi/4, 0, 0],
+    body_pose_lin=[0, -1, 0]
+)
 
 world.add_child(
     link_1,
-    pose=PoseVector(linear_component=XYVector(0, -0.75)),
-    joint_base=PoseVector(linear_component=XYVector(0, 2), angular_component=Versor(XYZVector(0, 1, 0), 0)),
-    joint_pose=PoseVector(angular_component=Versor(XYZVector(0, 0, 1), math.pi/3, symbols=True)),
-    joint_motion=MotionVector(angular_component=XYZVector(0.75, 0, 0, symbols=True))
-)
+    joint_1)
+#    pose=PoseVector(linear_component=XYVector(0, -0.75)),
+#    joint_base=PoseVector(linear_component=XYVector(0, 2), angular_component=Versor(XYZVector(0, 1, 0), 0)),
+#    joint_pose=PoseVector(angular_component=Versor(XYZVector(0, 0, 1), math.pi/3, symbols=True)),
+#    joint_motion=MotionVector(angular_component=XYZVector(0.75, 0, 0, symbols=True))
+#)
 
-link_1.add_child(
-    link_2,
-    pose=PoseVector(linear_component=XYVector(0, -0.5)),
-    joint_base=PoseVector(linear_component=XYVector(0, -0.5)),
-    joint_pose=PoseVector(angular_component=Angle(0, symbols=False, use_constant=True)),
-    joint_motion=MotionVector(angular_component=Angle(0, symbols=False, use_constant=False))
-)
+#link_1.add_child(
+#    link_2,
+#    pose=PoseVector(linear_component=XYVector(0, -0.5)),
+#    joint_base=PoseVector(linear_component=XYVector(0, -0.5)),
+#    joint_pose=PoseVector(angular_component=Angle(0, symbols=False, use_constant=True)),
+#    joint_motion=MotionVector(angular_component=Angle(0, symbols=False, use_constant=False))
+#)
 
 integrator = EulerIntegrator("dual_pendulum")
 integrator.build_simulation_expressions(world, MotionVector(XYVector(0, 9.81), frame=world.frame))

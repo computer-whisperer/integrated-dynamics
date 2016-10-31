@@ -48,7 +48,8 @@ class Joint:
             joint_pose_lin, joint_pose_ang,
             joint_motion_lin, joint_motion_ang,
             body_pose_lin, body_pose_ang,
-            "joint_pose_ang_x joint_pose_ang_y joint_pose_ang_z joint_motion_ang_x joint_motion_ang_y joint_motion_ang_z"
+            "joint_pose_ang_x joint_pose_ang_y joint_pose_ang_z "
+            "joint_motion_ang_x joint_motion_ang_y joint_motion_ang_z"
         )
 
     @classmethod
@@ -88,24 +89,24 @@ class Joint:
                  symbolic_axes=None):
         self.name = name
         self.joint_base_lin = joint_base_lin or [0, 0, 0]
-        self.joint_base_ang = joint_base_ang or [0, 0, 0, 0]
+        self.joint_base_ang = joint_base_ang or [0, 0, 0]
 
         self.joint_pose_lin = joint_pose_lin or [0, 0, 0]
-        self.joint_pose_ang = joint_pose_ang or [0, 0, 0, 0]
+        self.joint_pose_ang = joint_pose_ang or [0, 0, 0]
         self.joint_motion_lin = joint_motion_lin or [0, 0, 0]
         self.joint_motion_ang = joint_motion_ang or [0, 0, 0]
 
         self.body_pose_lin = body_pose_lin or [0, 0, 0]
-        self.body_pose_ang = body_pose_ang or [0, 0, 0, 0]
+        self.body_pose_ang = body_pose_ang or [0, 0, 0]
 
         self.symbolic_axes = symbolic_axes or []
         if isinstance(self.symbolic_axes, str):
             self.symbolic_axes = symbolic_axes.split(" ")
 
     def init_symbols(self, parent_body, child_body):
-        self.name = self.name or "joint_{}_{}".format(self.parent_body.name, self.child_body.name)
         self.parent_body = parent_body
         self.child_body = child_body
+        self.name = self.name or "joint_{}_{}".format(self.parent_body.name, self.child_body.name)
         self.state_symbols = {}
         self.state_symbol_derivatives = {}
         self.state_defaults = {}
@@ -122,22 +123,29 @@ class Joint:
         #            break
 
     def init_frames(self, root_frame):
-        self.base_frame = self.parent_body.frame.orientnew("{}_base".format(self.name), "quaternion", self.joint_base_ang)
-        self.base_point = self.parent_body.locatenew("{}_base".format(self.name), list_to_vector(self.parent_body.frame, self.joint_base_lin))
+        self.base_frame = self.parent_body.frame.orientnew("{}_base".format(self.name), "Body", self.joint_base_ang, "XYZ")
+        self.base_frame.set_ang_vel(self.parent_body.frame, 0)
+        self.base_point = self.parent_body.point.locatenew("{}_base".format(self.name), list_to_vector(self.parent_body.frame, self.joint_base_lin))
+        self.base_point.set_vel(self.parent_body.frame, 0)
 
-        self.end_frame = self.base_frame.frame.orientnew("{}_end".format(self.name), "quaternion", self.joint_pose_ang)
+
+        self.end_frame = self.base_frame.orientnew("{}_end".format(self.name), "Body", self.joint_pose_ang, "XYZ")
         self.end_frame.set_ang_vel(self.base_frame, list_to_vector(self.base_frame, self.joint_motion_ang))
         self.end_point = self.base_point.locatenew("{}_end".format(self.name), list_to_vector(self.base_frame, self.joint_pose_lin))
         self.end_point.set_vel(self.base_frame, list_to_vector(self.base_frame, self.joint_pose_lin))
 
-        self.end_frame.orient(self.child_body.frame, "quaternion", self.body_pose_ang)
-        self.end_point.locate(self.child_body.point, list_to_vector(self.end_frame, self.body_pose_lin))
+        self.child_body.frame.orient(self.end_frame, "Body", self.body_pose_ang, "XYZ")
+        self.child_body.frame.set_ang_vel(self.end_frame, 0)
+        self.child_body.point.set_pos(self.end_point, list_to_vector(self.end_frame, self.body_pose_lin))
+        self.child_body.point.set_pos(self.end_point, 0)
 
-        self.end_point.v2pt_theory(self.base_point, root_frame, self.end_frame)
-        self.end_point.a2pt_theory(self.base_point, root_frame, self.end_frame)
+        self.base_point.v2pt_theory(self.parent_body.point, root_frame, self.parent_body.frame)
+        self.end_point.v2pt_theory(self.base_point, root_frame, self.base_frame)
+        self.child_body.point.v2pt_theory(self.end_point, root_frame, self.end_frame)
+        #self.end_point.a2pt_theory(self.base_point, root_frame, self.end_frame)
 
     def set_symbol(self, component, symbol=None, d_symbol=None):
-        full_name = "_".join([component, self.parent_body.name, self.child_body.name])
+        full_name = "_".join([self.parent_body.name, self.child_body.name, component])
         symbol = symbol or vector.dynamicsymbols(full_name)
         d_symbol = d_symbol or vector.dynamicsymbols(full_name, 1)
         state_vector = getattr(self, component[:-2])
@@ -145,17 +153,14 @@ class Joint:
         def_val = state_vector[element]
         state_vector[element] = symbol
         self.state_symbols[component] = symbol
-        self.state_defaults[symbol] = def_val
-        self.state_symbol_derivatives[symbol] = d_symbol
-
-        if component.startswith("joint_pose_ang") and not isinstance(self.joint_pose_ang[0], sympy.Symbol):
-            self.set_symbol(sympy.symbols("joint_pose_ang_{}"))
+        self.state_defaults[component] = def_val
+        self.state_symbol_derivatives[component] = d_symbol
 
     def get_pose_symbolic_axes(self):
         pose_symbol_axes = []
         for component in self.symbolic_axes:
             if component.startswith("joint_pose"):
-                pose_symbol_axes.append(self.state_symbols[component])
+                pose_symbol_axes.append(component)
         return pose_symbol_axes
 
     def get_motion_symbolic_axes(self):
@@ -203,7 +208,33 @@ class Joint:
             subs[symbol] = force_value
         return subs
 
-
+    def get_derivative_substitutions(self):
+        substitutions = {}
+        for component in self.state_symbol_derivatives:
+            if component.startswith("joint_pose"):
+                d_symbol = self.state_symbol_derivatives[component]
+                symbol_comp = "joint_motion" + component[10:]
+                symbol = self.state_symbols[symbol_comp]
+                substitutions[d_symbol] = symbol
+            #elif component.startswith("joint_pose_ang"):
+            #    q_w, q_x, q_y, q_z = self.joint_pose_ang
+            #    w_x, w_y, w_z = self.joint_motion_ang
+            #    theta = sympy.sqrt(q_x**2 + w_y**2 + w_z**2)
+            #    sin = sympy.sin(theta/2)
+            #    cos = sympy.cos(theta/2)
+            #    if component == "joint_pose_ang_w":
+            #        d_q_w = self.state_symbol_derivatives[component]
+            #        substitutions[d_q_w] = q_w*(sin-1) - q_x*cos*w_x/theta - q_y*cos*w_y/theta - q_z*cos*w_z/theta
+            #    elif component == "joint_pose_ang_x":
+            #        d_q_x = self.state_symbol_derivatives[component]
+            #        substitutions[d_q_x] = q_w*cos*w_x/theta + q_x*(sin-1) + q_y*cos*w_z/theta - q_z*cos*w_y/theta
+            #    elif component == "joint_pose_ang_y":
+            #        d_q_y = self.state_symbol_derivatives[component]
+            #        substitutions[d_q_y] = q_w*cos*w_y/theta - q_x*cos*w_z/theta + q_y*(sin-1) + q_z*cos*w_x/theta
+            #    elif component == "joint_pose_ang_z":
+            #        d_q_z = self.state_symbol_derivatives[component]
+            #        substitutions[d_q_z] = q_w*cos*w_z/theta + q_x*cos*w_y/theta + q_y*cos*w_x/theta + q_z*(sin-1)
+        return substitutions
 
 
 
