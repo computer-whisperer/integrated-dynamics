@@ -32,7 +32,7 @@ class Body:
         self.net_force = None
 
     def add_child(self, body, joint):
-        body.root_body = self
+        body.root_body = self.root_body
         body.joint = joint
         self.children.append(body)
         joint.init_symbols(self, body)
@@ -48,50 +48,47 @@ class Body:
             result.extend(child.get_all_children())
         return result
 
-    def get_pose_symbol_components(self):
-        pose_symbols = []
+    def get_symbol_names(self):
+        pose_symbol_names = []
+        motion_symbol_names = []
         for child in self.children:
-            pose_symbols.extend(child.joint.get_pose_symbolic_axes())
-            pose_symbols.extend(child.get_pose_symbols())
-        return pose_symbols
+            pose_names, motion_names = child.joint.get_symbol_names()
+            pose_symbol_names.extend(pose_names)
+            motion_symbol_names.extend(motion_names)
+            pose_names, motion_names = child.get_symbol_names()
+            pose_symbol_names.extend(pose_names)
+            motion_symbol_names.extend(motion_names)
+        return pose_symbol_names, motion_symbol_names
 
-    def get_motion_symbol_components(self):
-        motion_symbols = []
+    def get_dynamic_symbols(self):
+        pose_dynamic_symbols = []
+        motion_dynamic_symbols = []
         for child in self.children:
-            motion_symbols.extend(child.joint.get_motion_symbolic_axes())
-            motion_symbols.extend(child.get_motion_symbols())
-        return motion_symbols
+            joint_pose_dynamic_symbols, joint_motion_dynamic_symbols = child.joint.get_dynamic_symbols()
+            pose_dynamic_symbols.extend(joint_pose_dynamic_symbols)
+            motion_dynamic_symbols.extend(joint_motion_dynamic_symbols)
+            child_pose_dynamic_symbols, child_motion_dynamic_symbols = child.get_dynamic_symbols()
+            pose_dynamic_symbols.extend(child_pose_dynamic_symbols)
+            motion_dynamic_symbols.extend(child_motion_dynamic_symbols)
+        return pose_dynamic_symbols, motion_dynamic_symbols
 
-    def get_pose_symbols(self):
-        pose_symbols = []
+    def get_def_symbol_values(self):
+        pose_symbol_values = []
+        motion_symbol_values = []
         for child in self.children:
-            pose_symbols.extend(child.joint.get_pose_symbols())
-            pose_symbols.extend(child.get_pose_symbols())
-        return pose_symbols
-
-    def get_motion_symbols(self):
-        motion_symbols = []
-        for child in self.children:
-            motion_symbols.extend(child.joint.get_motion_symbols())
-            motion_symbols.extend(child.get_motion_symbols())
-        return motion_symbols
-
-    def get_def_pose_symbol_values(self):
-        default_values = []
-        for child in self.children:
-            default_values.extend(child.joint.get_def_pose_symbol_values())
-            default_values.extend(child.get_def_pose_symbol_values())
-        return default_values
-
-    def get_def_motion_symbol_values(self):
-        default_values = []
-        for child in self.children:
-            default_values.extend(child.joint.get_def_motion_symbol_values())
-            default_values.extend(child.get_def_motion_symbol_values())
-        return default_values
+            joint_pose_symbol_values, joint_motion_symbol_values = child.joint.get_def_symbol_values()
+            pose_symbol_values.extend(joint_pose_symbol_values)
+            motion_symbol_values.extend(joint_motion_symbol_values)
+            child_pose_symbol_values, child_motion_symbol_values = child.get_def_symbol_values()
+            pose_symbol_values.extend(child_pose_symbol_values)
+            motion_symbol_values.extend(child_motion_symbol_values)
+        return pose_symbol_values, motion_symbol_values
 
     def get_rigid_body_inertia(self):
         raise NotImplementedError()
+
+    def add_force(self, force):
+        self.forces.append((self.point, force.get_vector(self)))
 
     def get_force_tuples(self):
         force_tuples = []
@@ -99,17 +96,6 @@ class Body:
         for child in self.children:
             force_tuples.extend(child.get_force_tuples())
         return force_tuples
-
-    def get_total_forces(self):
-        local_forces = []
-        for child in self.children:
-            if len(child["joint_forces"]) > 0:
-                joint_force_sum = sum(child["joint_forces"])
-            else:
-                joint_force_sum = ForceVector(frame=self.frame)
-            local_forces.extend(joint_force_sum.get_values(components=child["joint_motion"].get_symbol_components()))
-            local_forces.extend(child["body"].get_total_forces())
-        return local_forces
 
     def get_edges(self):
         raise NotImplementedError()
@@ -149,7 +135,6 @@ class WorldBody(Body):
         for child in self.children:
             rigid_bodies.extend(child.get_sympy_rigid_bodies())
         return rigid_bodies
-
 
     def get_edges(self):
         vertices = []

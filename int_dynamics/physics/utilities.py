@@ -1,8 +1,7 @@
 import time
 import sympy
-from sympy import physics
 import numpy
-
+import logging
 
 def build_function(expression, components, arguments, math_library):
     print("begin function compile")
@@ -17,11 +16,11 @@ def build_function(expression, components, arguments, math_library):
         print("begin lambdification")
         symbol_funcs = {}
         for symbol in components:
-            needed_symbols = components[symbol].atoms(sympy.Symbol)
+            needed_symbols = list(components[symbol].atoms(sympy.Symbol))
             symbol_funcs[symbol] = (needed_symbols, sympy.lambdify(needed_symbols, components[symbol], modules=math_library, dummify=False))
-        #final_needed_symbols = expression.atoms(sympy.Symbol)
+        final_needed_symbols = list(expression.atoms(sympy.Symbol))
         final_func = sympy.lambdify(
-            arguments,
+            final_needed_symbols,
             expression)
 
         def resolve_substitute(symbol, values):
@@ -31,7 +30,7 @@ def build_function(expression, components, arguments, math_library):
                 if sub_symbol in values:
                     val = values[sub_symbol]
                 else:
-                    val = numpy.asarray(float(resolve_substitute(sub_symbol, values)))
+                    val = float(resolve_substitute(sub_symbol, values))
                 args.append(val)
             value = func(*args)
             values[symbol] = value
@@ -42,7 +41,7 @@ def build_function(expression, components, arguments, math_library):
             for arg, val in zip(arguments, arg_values):
                 values[arg] = numpy.asarray(float(val))
             args = []
-            for symbol in arguments:
+            for symbol in final_needed_symbols:
                 if symbol not in values:
                     resolve_substitute(symbol, values)
                 args.append(values[symbol])
@@ -55,3 +54,24 @@ def build_function(expression, components, arguments, math_library):
 
 def list_to_vector(frame, value):
     return value[0]*frame.x + value[1]*frame.y + value[2]*frame.z
+
+
+class TaskTimer:
+
+    current_task = None
+    task_start_time = time.time()
+
+    def next_task(self, task_name):
+        self.finish_task()
+        self.new_task(task_name)
+
+    def new_task(self, task_name):
+        print("Started {}".format(task_name))
+        self.current_task = task_name
+        self.task_start_time = time.time()
+
+    def finish_task(self):
+        if self.current_task is None:
+            return
+        print("Completed {} in {} seconds.".format(self.current_task, time.time() - self.task_start_time))
+        self.current_task = None

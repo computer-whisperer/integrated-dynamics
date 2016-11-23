@@ -11,7 +11,7 @@ def test_single_body():
     world = WorldBody()
     body = CubeBody(1, 1, 1, 1)
     world.add_child(body, Joint.free_joint())
-    integrator = EulerIntegrator()
+    integrator = EquationBuilder()
     print("begin expression build")
     integrator.build_simulation_expressions(world, MotionVector(XYZVector(0, 9.81, 0), frame=world.frame), autocache=False)
     integrator.build_simulation_function()
@@ -84,7 +84,7 @@ def test_inverse_dynamics_articulated_2d():
         joint_motion=MotionVector(XYVector(0, 0, symbols=False), Angle(0, symbols=True, use_constant=False))
     )
 
-    integrator = EulerIntegrator()
+    integrator = EquationBuilder()
     integrator.init_symbols(world)
     accel_vector = [-1, 3, -5]
     force_vector, root_forces = world.get_inverse_dynamics(accel_vector)
@@ -138,7 +138,7 @@ def test_inverse_dynamics_articulated_3d():
         joint_motion=MotionVector(XYZVector(0, 0, 0, symbols=False), Quaternion(0, 0, 0, 0, symbol_components="b"))
     )
 
-    integrator = EulerIntegrator()
+    integrator = EquationBuilder()
     integrator.init_symbols(world)
 
     accel_vector = [0, 0, 0, 0, 0, 0, 0, 0, 0, 1]

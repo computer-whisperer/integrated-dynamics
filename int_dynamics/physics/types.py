@@ -1,7 +1,7 @@
 import sympy
 from sympy.matrices import Matrix, eye, zeros
 import numpy # Required for workaround https://stackoverflow.com/questions/38040846/error-with-sympy-lambdify-for-piecewise-functions-and-numpy-module
-from . import integrators
+from . import equation_builder
 
 
 class Frame:

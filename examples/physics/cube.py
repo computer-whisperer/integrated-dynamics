@@ -4,16 +4,15 @@ import math
 world = WorldBody()
 cube = CubeBody(0.2, 0.2, 0.2, 1, name="cube")
 
+cube.forces.append((cube.point, world.frame.y * (-9.81) * cube.body_mass))
+
+joint_1 = Joint.trans_joint()
 
 world.add_child(
     cube,
-    pose=PoseVector(linear_component=XYVector(0, 0)),
-    joint_base=PoseVector(linear_component=XYVector(0, 0)),
-    joint_pose=PoseVector(linear_component=Quaternion(0, 0, 0, 0, symbol_components=""), angular_component=Quaternion(1, 0, 0, 0, symbol_components="abcd")),
-    joint_motion=MotionVector(linear_component=Quaternion(0, 0, 0, 0, symbol_components=""), angular_component=Quaternion(0, 0, 0.5, 1, symbol_components="d"))
-)
+    joint_1)
 
-integrator = EulerIntegrator("cube")
+integrator = EquationBuilder("cube")
 integrator.build_simulation_expressions(world, MotionVector(XYVector(0, 9.81), frame=world.frame))
 integrator.build_simulation_function()
 

@@ -24,7 +24,7 @@ for i in range(blade_ct):
     quad_forces.append(root_force)
 quadcopter.forces.append(sum(quad_forces))
 
-integrator = EulerIntegrator("quadcopter")
+integrator = EquationBuilder("quadcopter")
 integrator.build_simulation_expressions(world, MotionVector(XYVector(0, 9.81), frame=world.frame))
 integrator.build_simulation_function()
 
