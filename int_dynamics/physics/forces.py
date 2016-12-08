@@ -22,12 +22,21 @@ class Drag(Force):
         return -body.point.vel(body.root_body.frame)
 
 
-class Thruster(Force):
+class ThrusterForce(Force):
 
-    def __init__(self, name, motor_controller, max_thrust):
-        self.name = name
+    def __init__(self, motor_controller, max_thrust):
         self.motor_controller = motor_controller
         self.max_thrust = max_thrust
 
     def get_vector(self, body):
         return body.frame.y * self.motor_controller.get() * self.max_thrust
+
+
+class Buoyancy(Force):
+
+    def __init__(self, coefficient):
+        self.coefficient = coefficient
+
+    def get_vector(self, body):
+        altitude = body.point.pos_from(body.root_body.point).dot(body.root_body.frame.y)
+        return body.root_body.frame.y * -self.coefficient * altitude * body.get_volume() / body.body_mass

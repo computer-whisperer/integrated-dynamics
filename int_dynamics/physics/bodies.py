@@ -106,6 +106,9 @@ class Body:
             substiutions.update(child.get_derivative_substitutions())
         return substiutions
 
+    def get_volume(self):
+        return 0
+
     def get_sympy_rigid_bodies(self):
         rigid_bodies = [self.rigid_body]
         for child in self.children:
@@ -190,6 +193,9 @@ class CubeBody(Body):
         for child in self.children:
             vertices.extend(child.get_edges())
         return vertices
+
+    def get_volume(self):
+        return self.x_dim*self.y_dim*self.z_dim
 
 
 

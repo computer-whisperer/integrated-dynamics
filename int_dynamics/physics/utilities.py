@@ -1,19 +1,26 @@
 import time
 import sympy
 import numpy
-import logging
+from functools import partial
+
 
 def build_function(expression, components, arguments, math_library):
-    print("begin function compile")
-    start_time = time.time()
+    task_timer = TaskTimer()
     if math_library == "theano":
-        from sympy.printing.theanocode import theano_function
-        print("building theano function")
-        raw_expression = expression.subs(components)
-        result_func = theano_function(arguments, raw_expression)
-        print("finished building theano function")
+        from sympy.printing.theanocode import theano_code
+        import theano
+        task_timer.next_task("building theano function")
+        cache = {}
+        code = partial(theano_code, cache=cache)
+        tinputs = list(map(code, arguments))
+        for symbol, value in components:
+            key = (symbol.name, 'floatX', (), type(symbol))
+            cache[key] = theano_code(value, cache=cache)
+        toutputs = theano_code(expression, cache=cache)
+        result_func = theano.function(inputs=tinputs, outputs=toutputs, on_unused_input='ignore')
     else:
-        print("begin lambdification")
+        task_timer.next_task("lambdify()")
+        components = dict(components)
         symbol_funcs = {}
         for symbol in components:
             needed_symbols = list(components[symbol].atoms(sympy.Symbol))
@@ -47,8 +54,7 @@ def build_function(expression, components, arguments, math_library):
                 args.append(values[symbol])
             return final_func(*args)
         result_func = sympy_dynamics_func
-        print("finish lambdification")
-    print("finished function build in {} seconds".format(time.time()-start_time))
+    task_timer.finish_task()
     return result_func
 
 
