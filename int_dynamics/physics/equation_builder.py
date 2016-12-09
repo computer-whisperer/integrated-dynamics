@@ -18,7 +18,7 @@ def count_ops(mat):
 
 class EquationBuilder:
 
-    def __init__(self, name=None, math_library="numpy"):
+    def __init__(self, name=None):
         self.name = name or self.__class__.__name__
 
         self.state_names = None
@@ -39,13 +39,11 @@ class EquationBuilder:
         self.state_diff = None
         self.forward_dynamics_func = None
 
-        self.math_library = math_library
-
         self.vertices = None
         self.edge_matrix = None
         self.edge_matrix_components = None
         self.edge_func = None
-        self.cse_symbol_substitutions = {}
+        self.cse_symbol_substitutions = []
         self.controllers = []
 
     def add_controllers(self, controllers):
@@ -105,7 +103,7 @@ class EquationBuilder:
         if cse:
             task_timer.next_task("running cse() on state_diff")
             components, reduced_exprs = sympy.cse(self.state_diff, symbols=component_symbols_gen, order='none')
-            self.cse_symbol_substitutions.update(dict(components))
+            self.cse_symbol_substitutions.extend(components)
             self.state_diff = reduced_exprs[0]
         # print("Doing integration")
         # if integrator == 'euler':
@@ -137,20 +135,20 @@ class EquationBuilder:
 
         task_timer.finish_task()
 
-    def build_simulation_function(self):
+    def build_simulation_function(self, math_library="numpy"):
         self.forward_dynamics_func = build_function(
             self.state_diff,
             self.cse_symbol_substitutions,
             self.state_symbols + self.control_symbols,
-            self.math_library
+            math_library
         )
 
-    def build_rendering_function(self):
+    def build_rendering_function(self, math_library="numpy"):
         self.edge_func = build_function(
             self.edge_matrix,
             self.cse_symbol_substitutions,
             self.state_symbols,
-            self.math_library
+            math_library
         )
 
     def build_state_substitutions(self):
@@ -187,9 +185,9 @@ class EquationBuilder:
             state_diff = self.forward_dynamics_func(*(self.current_state + controller_values))[:,0].tolist()
             self.current_state = [float(diff)*self.dt_value + last_state for diff, last_state in zip(state_diff, self.current_state)]
         if integrator == 'rk4':
-            k1 = self.forward_dynamics_func(*(self.current_state+controller_values))[:,0].tolist()
+            k1 = self.forward_dynamics_func(*(self.current_state+controller_values))[:, 0].tolist()
             new_state = [curr + self.dt_value/2*diff for curr, diff in zip(self.current_state, k1)]
-            k2 = self.forward_dynamics_func(*(new_state+controller_values))[:,0].tolist()
+            k2 = self.forward_dynamics_func(*(new_state+controller_values))[:, 0].tolist()
             new_state = [curr + self.dt_value / 2 * diff for curr, diff in zip(self.current_state, k2)]
             k3 = self.forward_dynamics_func(*(new_state+controller_values))[:, 0].tolist()
             new_state = [curr + self.dt_value * diff for curr, diff in zip(self.current_state, k3)]
@@ -210,10 +208,8 @@ class EquationBuilder:
 
     def cache_equations(self, path):
         self.clean_equations()
-        start_time = time.time()
-        print("starting integrator cache to {}".format(path))
-        #dill.settings['recurse'] = True
+        task_timer = TaskTimer()
+        task_timer.next_task("caching equation builder to {}".format(path))
         with open(path, 'wb') as f:
             pickle.dump(self, f, -1)
-        print("integrator cache took {} seconds".format(time.time() - start_time))
-
+        task_timer.finish_task()

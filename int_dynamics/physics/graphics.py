@@ -6,7 +6,8 @@ import time
 
 class OpenGLRenderer:
     last_time = 0
-    replay = 1000
+    replay = 30
+    title_update_counter = 0
 
     def __init__(self, integrator):
         self.integrator = integrator
@@ -42,11 +43,18 @@ class OpenGLRenderer:
         glutMainLoop()
 
     def display(self):
-        current_time = time.time()
-        dt = (current_time - self.last_time)
+        func_start_time = time.time()
+
+        dt = (func_start_time - self.last_time)
         if self.integrator.get_time() > self.replay:
             self.integrator.reset_simulation()
+
+        start_time = func_start_time
         self.integrator.step_time(dt)
+        current_time = time.time()
+        simulation_time = current_time - start_time
+        start_time = current_time
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glPushMatrix()
         color = [1.0, 0., 0., 1.]
@@ -54,4 +62,14 @@ class OpenGLRenderer:
         self.integrator.opengl_draw()
         glPopMatrix()
         glutSwapBuffers()
-        self.last_time = current_time
+
+        current_time = time.time()
+        render_time = current_time - start_time
+
+        self.title_update_counter += 1
+        if self.title_update_counter > 100:
+            self.title_update_counter = 0
+            glutSetWindowTitle("Integrated Dynamics [sim: {}, draw: {}]".format(simulation_time, render_time))
+
+        self.last_time = func_start_time
+
